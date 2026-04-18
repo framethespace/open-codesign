@@ -13,12 +13,14 @@ export function Onboarding() {
   const [step, setStep] = useState<Step>('welcome');
   const [provider, setProvider] = useState<SupportedOnboardingProvider | null>(null);
   const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  function handleValidated(p: SupportedOnboardingProvider, key: string) {
+  function handleValidated(p: SupportedOnboardingProvider, key: string, url: string | null) {
     setProvider(p);
     setApiKey(key);
+    setBaseUrl(url);
     setStep('model');
   }
 
@@ -36,6 +38,7 @@ export function Onboarding() {
         apiKey,
         modelPrimary,
         modelFast,
+        ...(baseUrl !== null ? { baseUrl } : {}),
       });
       completeOnboarding(next);
     } catch (err) {

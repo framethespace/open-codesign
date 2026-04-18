@@ -22,12 +22,18 @@ export const SecretRef = z.object({
 });
 export type SecretRef = z.infer<typeof SecretRef>;
 
+export const BaseUrlRef = z.object({
+  baseUrl: z.string().url(),
+});
+export type BaseUrlRef = z.infer<typeof BaseUrlRef>;
+
 export const ConfigSchema = z.object({
   version: z.literal(1).default(1),
   provider: ProviderIdEnum,
   modelPrimary: z.string().min(1),
   modelFast: z.string().min(1),
   secrets: z.record(ProviderIdEnum, SecretRef).default({}),
+  baseUrls: z.record(ProviderIdEnum, BaseUrlRef).default({}),
 });
 export type Config = z.infer<typeof ConfigSchema>;
 
@@ -36,6 +42,7 @@ export interface OnboardingState {
   provider: SupportedOnboardingProvider | null;
   modelPrimary: string | null;
   modelFast: string | null;
+  baseUrl: string | null;
 }
 
 export interface ProviderShortlist {

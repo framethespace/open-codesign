@@ -6,7 +6,12 @@ import { BRAND, CodesignError, GeneratePayload } from '@open-codesign/shared';
 import { BrowserWindow, app, ipcMain, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { registerExporterIpc } from './exporter-ipc';
-import { getApiKeyForProvider, loadConfigOnBoot, registerOnboardingIpc } from './onboarding-ipc';
+import {
+  getApiKeyForProvider,
+  getBaseUrlForProvider,
+  loadConfigOnBoot,
+  registerOnboardingIpc,
+} from './onboarding-ipc';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -55,12 +60,14 @@ function registerIpcHandlers(): void {
   ipcMain.handle('codesign:generate', async (_e, raw: unknown) => {
     const payload = GeneratePayload.parse(raw);
     const apiKey = getApiKeyForProvider(payload.model.provider);
+    const storedBaseUrl = getBaseUrlForProvider(payload.model.provider);
+    const baseUrl = payload.baseUrl ?? storedBaseUrl;
     return generate({
       prompt: payload.prompt,
       history: payload.history,
       model: payload.model,
       apiKey,
-      ...(payload.baseUrl !== undefined ? { baseUrl: payload.baseUrl } : {}),
+      ...(baseUrl !== undefined ? { baseUrl } : {}),
     });
   });
 }

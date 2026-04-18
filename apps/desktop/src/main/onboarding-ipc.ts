@@ -15,6 +15,7 @@ interface SaveKeyInput {
   apiKey: string;
   modelPrimary: string;
   modelFast: string;
+  baseUrl?: string;
 }
 
 interface ValidateKeyInput {
@@ -53,22 +54,36 @@ export function getApiKeyForProvider(provider: string): string {
   return decryptSecret(ref.ciphertext);
 }
 
+export function getBaseUrlForProvider(provider: string): string | undefined {
+  const cfg = getCachedConfig();
+  if (cfg === null) return undefined;
+  const ref = cfg.baseUrls?.[provider as keyof typeof cfg.baseUrls];
+  return ref?.baseUrl;
+}
+
 function toState(cfg: Config | null): OnboardingState {
   if (cfg === null) {
-    return { hasKey: false, provider: null, modelPrimary: null, modelFast: null };
+    return { hasKey: false, provider: null, modelPrimary: null, modelFast: null, baseUrl: null };
   }
   if (!isSupportedOnboardingProvider(cfg.provider)) {
-    return { hasKey: false, provider: null, modelPrimary: null, modelFast: null };
+    return { hasKey: false, provider: null, modelPrimary: null, modelFast: null, baseUrl: null };
   }
   const ref = cfg.secrets[cfg.provider];
   if (ref === undefined) {
-    return { hasKey: false, provider: cfg.provider, modelPrimary: null, modelFast: null };
+    return {
+      hasKey: false,
+      provider: cfg.provider,
+      modelPrimary: null,
+      modelFast: null,
+      baseUrl: null,
+    };
   }
   return {
     hasKey: true,
     provider: cfg.provider,
     modelPrimary: cfg.modelPrimary,
     modelFast: cfg.modelFast,
+    baseUrl: cfg.baseUrls?.[cfg.provider]?.baseUrl ?? null,
   };
 }
 
@@ -81,6 +96,7 @@ function parseSaveKey(raw: unknown): SaveKeyInput {
   const apiKey = r['apiKey'];
   const modelPrimary = r['modelPrimary'];
   const modelFast = r['modelFast'];
+  const baseUrl = r['baseUrl'];
   if (typeof provider !== 'string' || !isSupportedOnboardingProvider(provider)) {
     throw new CodesignError(
       `Provider "${String(provider)}" is not supported in v0.1.`,
@@ -96,7 +112,16 @@ function parseSaveKey(raw: unknown): SaveKeyInput {
   if (typeof modelFast !== 'string' || modelFast.trim().length === 0) {
     throw new CodesignError('modelFast must be a non-empty string', 'IPC_BAD_INPUT');
   }
-  return { provider, apiKey, modelPrimary, modelFast };
+  const out: SaveKeyInput = { provider, apiKey, modelPrimary, modelFast };
+  if (typeof baseUrl === 'string' && baseUrl.trim().length > 0) {
+    try {
+      new URL(baseUrl);
+    } catch {
+      throw new CodesignError(`baseUrl "${baseUrl}" is not a valid URL`, 'IPC_BAD_INPUT');
+    }
+    out.baseUrl = baseUrl.trim();
+  }
+  return out;
 }
 
 function parseValidateKey(raw: unknown): ValidateKeyInput {
@@ -135,6 +160,12 @@ export function registerOnboardingIpc(): void {
   ipcMain.handle('onboarding:save-key', async (_e, raw: unknown): Promise<OnboardingState> => {
     const input = parseSaveKey(raw);
     const ciphertext = encryptSecret(input.apiKey);
+    const nextBaseUrls = { ...(cachedConfig?.baseUrls ?? {}) };
+    if (input.baseUrl !== undefined) {
+      nextBaseUrls[input.provider] = { baseUrl: input.baseUrl };
+    } else {
+      delete nextBaseUrls[input.provider];
+    }
     const next: Config = {
       version: 1,
       provider: input.provider,
@@ -144,6 +175,7 @@ export function registerOnboardingIpc(): void {
         ...(cachedConfig?.secrets ?? {}),
         [input.provider]: { ciphertext },
       },
+      baseUrls: nextBaseUrls,
     };
     await writeConfig(next);
     cachedConfig = next;

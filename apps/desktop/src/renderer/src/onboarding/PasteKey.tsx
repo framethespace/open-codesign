@@ -18,12 +18,18 @@ type ValidationState =
   | { kind: 'error'; code: ValidateKeyError['code'] | 'unsupported'; message: string };
 
 interface PasteKeyProps {
-  onValidated: (provider: SupportedOnboardingProvider, apiKey: string) => void;
+  onValidated: (
+    provider: SupportedOnboardingProvider,
+    apiKey: string,
+    baseUrl: string | null,
+  ) => void;
   onBack: () => void;
 }
 
 export function PasteKey({ onValidated, onBack }: PasteKeyProps) {
   const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [provider, setProvider] = useState<SupportedOnboardingProvider | null>(null);
   const [state, setState] = useState<ValidationState>({ kind: 'idle' });
   const reqIdRef = useRef(0);
@@ -34,6 +40,7 @@ export function PasteKey({ onValidated, onBack }: PasteKeyProps) {
   }, []);
 
   const trimmed = apiKey.trim();
+  const trimmedBaseUrl = baseUrl.trim();
 
   useEffect(() => {
     if (trimmed.length === 0) {
@@ -95,6 +102,7 @@ export function PasteKey({ onValidated, onBack }: PasteKeyProps) {
         result = await window.codesign.onboarding.validateKey({
           provider: detected,
           apiKey: trimmed,
+          ...(trimmedBaseUrl.length > 0 ? { baseUrl: trimmedBaseUrl } : {}),
         });
       } catch (err) {
         if (reqId !== reqIdRef.current) return;
@@ -115,7 +123,7 @@ export function PasteKey({ onValidated, onBack }: PasteKeyProps) {
     }, VALIDATE_DEBOUNCE_MS);
 
     return () => window.clearTimeout(handle);
-  }, [trimmed]);
+  }, [trimmed, trimmedBaseUrl]);
 
   const helpUrl = useMemo(() => {
     if (provider === null) return null;
@@ -124,7 +132,7 @@ export function PasteKey({ onValidated, onBack }: PasteKeyProps) {
 
   function handleContinue() {
     if (state.kind !== 'ok' || provider === null) return;
-    onValidated(provider, trimmed);
+    onValidated(provider, trimmed, trimmedBaseUrl.length > 0 ? trimmedBaseUrl : null);
   }
 
   return (
@@ -161,6 +169,41 @@ export function PasteKey({ onValidated, onBack }: PasteKeyProps) {
       </label>
 
       <StatusLine provider={provider} state={state} helpUrl={helpUrl} />
+
+      <details
+        open={advancedOpen}
+        onToggle={(e) => setAdvancedOpen((e.currentTarget as HTMLDetailsElement).open)}
+        className="text-[13px] text-[var(--color-text-secondary)]"
+      >
+        <summary
+          className="cursor-pointer select-none text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
+          style={{ fontFamily: 'var(--font-mono)' }}
+        >
+          Advanced — custom base URL (proxy / relay)
+        </summary>
+        <label className="flex flex-col gap-2 mt-3">
+          <span
+            className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)] font-medium"
+            style={{ fontFamily: 'var(--font-mono)' }}
+          >
+            Base URL
+          </span>
+          <input
+            type="url"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="https://your-proxy.example.com/v1"
+            spellCheck={false}
+            style={{ fontFamily: 'var(--font-mono)' }}
+            className="w-full h-[40px] px-3 rounded-[var(--radius-md)] bg-[var(--color-surface)] border border-[var(--color-border)] text-[13px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-accent)] focus:shadow-[0_0_0_3px_var(--color-focus-ring)] transition-[box-shadow,border-color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)]"
+          />
+          <span className="text-[12px] text-[var(--color-text-muted)] leading-[1.5]">
+            Override the default endpoint for your provider. Useful for relay services
+            (e.g. third-party AI gateways) and self-hosted proxies. Leave empty for the
+            official endpoint.
+          </span>
+        </label>
+      </details>
 
       <div className="flex justify-between gap-2 pt-2">
         <Button type="button" variant="ghost" onClick={onBack}>

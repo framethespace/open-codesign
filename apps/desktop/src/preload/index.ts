@@ -57,6 +57,7 @@ const api = {
       apiKey: string;
       modelPrimary: string;
       modelFast: string;
+      baseUrl?: string;
     }) => ipcRenderer.invoke('onboarding:save-key', input) as Promise<OnboardingState>,
     skip: () => ipcRenderer.invoke('onboarding:skip') as Promise<OnboardingState>,
   },
