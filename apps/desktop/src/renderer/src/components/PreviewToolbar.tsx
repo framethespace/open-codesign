@@ -43,9 +43,9 @@ export function PreviewToolbar(): ReactElement {
   const disabled = !previewHtml;
 
   return (
-    <div className="flex items-center justify-end gap-2 px-5 py-2 border-b border-[var(--color-border)] bg-[var(--color-background-secondary)]">
+    <div className="flex items-center justify-end gap-2 px-6 py-2 border-b border-[var(--color-border-muted)] bg-[var(--color-background-secondary)]">
       {toastMessage && (
-        <output className="mr-auto text-xs text-[var(--color-text-secondary)] truncate max-w-[60%]">
+        <output className="mr-auto text-[12px] text-[var(--color-text-secondary)] truncate max-w-[60%]">
           {toastMessage}
         </output>
       )}
@@ -55,18 +55,18 @@ export function PreviewToolbar(): ReactElement {
           type="button"
           disabled={disabled}
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[var(--radius-md)] text-sm font-medium border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)] disabled:opacity-50 disabled:pointer-events-none transition-colors"
+          className="inline-flex items-center gap-1.5 h-[30px] px-3 rounded-[var(--radius-md)] text-[13px] font-medium border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)] hover:border-[var(--color-border-strong)] disabled:opacity-40 disabled:pointer-events-none transition-[background-color,border-color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)]"
           aria-haspopup="menu"
           aria-expanded={open}
         >
-          <Download className="w-4 h-4" aria-hidden="true" />
+          <Download className="w-[14px] h-[14px]" aria-hidden="true" />
           Export
         </button>
 
         {open && (
           <div
             role="menu"
-            className="absolute right-0 top-full mt-1 min-w-[180px] rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] py-1 z-10"
+            className="absolute right-0 top-full mt-2 min-w-[200px] rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-elevated)] py-1 z-10"
           >
             {EXPORT_ITEMS.map((item) => (
               <button
@@ -79,11 +79,11 @@ export function PreviewToolbar(): ReactElement {
                   setOpen(false);
                   void exportActive(item.format);
                 }}
-                className="w-full flex items-center justify-between gap-3 px-3 py-2 text-sm text-left text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)] disabled:opacity-50 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors"
+                className="w-full flex items-center justify-between gap-3 px-3 py-2 text-[13px] text-left text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)] disabled:opacity-50 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors duration-100"
               >
                 <span>{item.label}</span>
                 {!item.ready && (
-                  <span className="text-xs text-[var(--color-text-muted)]">{item.hint}</span>
+                  <span className="text-[11px] text-[var(--color-text-muted)]">{item.hint}</span>
                 )}
               </button>
             ))}

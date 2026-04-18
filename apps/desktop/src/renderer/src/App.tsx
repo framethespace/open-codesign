@@ -1,8 +1,8 @@
 import { buildSrcdoc } from '@open-codesign/runtime';
 import { BUILTIN_DEMOS } from '@open-codesign/templates';
-import { Button } from '@open-codesign/ui';
-import { Send, Sparkles } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Wordmark } from '@open-codesign/ui';
+import { ArrowUp } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { PreviewToolbar } from './components/PreviewToolbar';
 import { Onboarding } from './onboarding';
 import { useCodesignStore } from './store';
@@ -16,10 +16,18 @@ export function App() {
   const configLoaded = useCodesignStore((s) => s.configLoaded);
   const loadConfig = useCodesignStore((s) => s.loadConfig);
   const [prompt, setPrompt] = useState('');
+  const taRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     void loadConfig();
   }, [loadConfig]);
+
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`;
+  }, []);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,9 +36,16 @@ export function App() {
     setPrompt('');
   }
 
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  }
+
   if (!configLoaded) {
     return (
-      <div className="h-full flex items-center justify-center bg-[var(--color-background)] text-sm text-[var(--color-text-muted)]">
+      <div className="h-full flex items-center justify-center bg-[var(--color-background)] text-[13px] text-[var(--color-text-muted)]">
         Loading…
       </div>
     );
@@ -40,35 +55,36 @@ export function App() {
     return <Onboarding />;
   }
 
+  const canSend = prompt.trim().length > 0 && !isGenerating;
+
   return (
-    <div className="h-full grid grid-cols-[380px_1fr] bg-[var(--color-background)]">
+    <div className="h-full grid grid-cols-[360px_1fr] bg-[var(--color-background)]">
       <aside className="flex flex-col border-r border-[var(--color-border)] bg-[var(--color-background-secondary)]">
-        <header className="px-5 py-4 border-b border-[var(--color-border)]">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-[var(--color-accent)]" />
-            <span className="font-semibold text-[var(--color-text-primary)]">open-codesign</span>
-            <span className="ml-auto text-xs text-[var(--color-text-muted)]">pre-alpha</span>
-          </div>
+        <header className="px-5 h-[52px] flex items-center border-b border-[var(--color-border-muted)]">
+          <Wordmark badge="pre-alpha" />
         </header>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-5 py-6 space-y-6">
           {messages.length === 0 ? (
-            <div>
-              <p className="text-sm text-[var(--color-text-secondary)] mb-3">
-                Try a starter prompt:
-              </p>
-              <ul className="space-y-2">
+            <div className="flex flex-col gap-3">
+              <span
+                className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)] font-medium"
+                style={{ fontFamily: 'var(--font-mono)' }}
+              >
+                Starter prompts
+              </span>
+              <ul className="flex flex-col gap-2">
                 {BUILTIN_DEMOS.map((demo) => (
                   <li key={demo.id}>
                     <button
                       type="button"
                       onClick={() => setPrompt(demo.prompt)}
-                      className="w-full text-left px-3 py-2 rounded-[var(--radius-md)] bg-[var(--color-surface)] border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] transition-colors"
+                      className="group w-full text-left px-4 py-3 rounded-[var(--radius-lg)] bg-[var(--color-surface)] border border-[var(--color-border)] shadow-[var(--shadow-soft)] hover:-translate-y-[1px] hover:border-[var(--color-border-strong)] hover:shadow-[var(--shadow-card)] transition-[transform,box-shadow,border-color] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]"
                     >
-                      <div className="text-sm font-medium text-[var(--color-text-primary)]">
+                      <div className="text-[13px] font-semibold text-[var(--color-text-primary)] tracking-[-0.005em] group-hover:text-[var(--color-accent)] transition-colors duration-150">
                         {demo.title}
                       </div>
-                      <div className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                      <div className="text-[12px] text-[var(--color-text-muted)] mt-[3px] leading-[1.5]">
                         {demo.description}
                       </div>
                     </button>
@@ -77,45 +93,84 @@ export function App() {
               </ul>
             </div>
           ) : (
-            messages.map((m, i) => (
-              <div
-                key={`${m.role}-${i}`}
-                className={`px-3 py-2 rounded-[var(--radius-md)] text-sm ${
-                  m.role === 'user'
-                    ? 'bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
-                    : 'bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text-primary)]'
-                }`}
-              >
-                {m.content}
-              </div>
-            ))
+            <div className="flex flex-col gap-3">
+              {messages.map((m, i) => (
+                <div
+                  key={`${m.role}-${i}-${m.content.slice(0, 8)}`}
+                  className={`px-4 py-3 rounded-[var(--radius-lg)] text-[13px] leading-[1.55] ${
+                    m.role === 'user'
+                      ? 'bg-[var(--color-accent-soft)] text-[var(--color-text-primary)] border border-[var(--color-accent-muted)]'
+                      : 'bg-[var(--color-surface)] border border-[var(--color-border-muted)] text-[var(--color-text-primary)]'
+                  }`}
+                >
+                  {m.content}
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="border-t border-[var(--color-border)] p-3 flex gap-2"
-        >
-          <input
-            type="text"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe what to design…"
-            disabled={isGenerating}
-            className="flex-1 px-3 py-2 rounded-[var(--radius-md)] bg-[var(--color-surface)] border border-[var(--color-border)] text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-accent)]"
-          />
-          <Button type="submit" size="md" disabled={isGenerating || !prompt.trim()}>
-            <Send className="w-4 h-4" />
-          </Button>
+        <form onSubmit={handleSubmit} className="border-t border-[var(--color-border-muted)] p-4">
+          <div className="relative flex items-end gap-2 p-2 rounded-[var(--radius-lg)] bg-[var(--color-surface)] border border-[var(--color-border)] focus-within:border-[var(--color-accent)] focus-within:shadow-[0_0_0_3px_var(--color-focus-ring)] transition-[box-shadow,border-color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)]">
+            <textarea
+              ref={taRef}
+              value={prompt}
+              onChange={(e) => {
+                setPrompt(e.target.value);
+                e.currentTarget.style.height = 'auto';
+                e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 160)}px`;
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="Describe what to design…"
+              disabled={isGenerating}
+              rows={1}
+              className="flex-1 resize-none bg-transparent px-2 py-1 text-[13px] leading-[1.5] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none min-h-[24px] max-h-[160px]"
+            />
+            <button
+              type="submit"
+              disabled={!canSend}
+              aria-label="Send prompt"
+              className="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-[var(--radius-md)] bg-[var(--color-accent)] text-white shadow-[var(--shadow-soft)] hover:bg-[var(--color-accent-hover)] hover:scale-[1.04] active:scale-[0.96] disabled:opacity-30 disabled:hover:scale-100 disabled:pointer-events-none transition-[transform,background-color,opacity] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)]"
+            >
+              <ArrowUp className="w-4 h-4" strokeWidth={2.4} />
+            </button>
+          </div>
+          <div className="mt-2 px-1 text-[11px] text-[var(--color-text-muted)] flex items-center justify-between">
+            <span>
+              <kbd
+                className="px-[5px] py-[1px] rounded-[4px] bg-[var(--color-surface-active)] text-[10px] text-[var(--color-text-secondary)]"
+                style={{ fontFamily: 'var(--font-mono)' }}
+              >
+                Enter
+              </kbd>{' '}
+              to send ·{' '}
+              <kbd
+                className="px-[5px] py-[1px] rounded-[4px] bg-[var(--color-surface-active)] text-[10px] text-[var(--color-text-secondary)]"
+                style={{ fontFamily: 'var(--font-mono)' }}
+              >
+                Shift+Enter
+              </kbd>{' '}
+              for newline
+            </span>
+            {isGenerating ? (
+              <span className="inline-flex items-center gap-1.5 text-[var(--color-accent)]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] animate-pulse" />
+                Generating
+              </span>
+            ) : null}
+          </div>
         </form>
       </aside>
 
       <main className="flex flex-col">
-        <header className="h-12 px-5 border-b border-[var(--color-border)] flex items-center justify-between">
-          <span className="text-sm text-[var(--color-text-secondary)]">
+        <header className="h-[52px] px-6 border-b border-[var(--color-border-muted)] flex items-center justify-between">
+          <span className="text-[13px] text-[var(--color-text-secondary)] tracking-[-0.005em]">
             {previewHtml ? 'Preview' : 'No design yet'}
           </span>
-          <span className="text-xs text-[var(--color-text-muted)]">
+          <span
+            className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)] font-medium"
+            style={{ fontFamily: 'var(--font-mono)' }}
+          >
             BYOK · local-first · multi-model
           </span>
         </header>
@@ -130,23 +185,65 @@ export function App() {
               className="w-full h-full bg-white rounded-[var(--radius-2xl)] shadow-[var(--shadow-card)] border border-[var(--color-border)]"
             />
           ) : (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-center max-w-md">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center">
-                  <Sparkles className="w-7 h-7 text-[var(--color-accent)]" />
-                </div>
-                <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-2">
-                  Design with AI
-                </h2>
-                <p className="text-sm text-[var(--color-text-secondary)]">
-                  Pick a starter on the left, or describe what you want to design. The result
-                  renders here in a sandboxed preview.
-                </p>
-              </div>
-            </div>
+            <EmptyState />
           )}
         </div>
       </main>
     </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="h-full flex items-center justify-center">
+      <div className="text-center max-w-[360px] flex flex-col items-center gap-5">
+        <EmptyMark />
+        <div className="flex flex-col gap-2">
+          <h2 className="text-[20px] font-semibold text-[var(--color-text-primary)] tracking-[-0.01em] leading-[1.2]">
+            A blank canvas, ready when you are.
+          </h2>
+          <p className="text-[13px] text-[var(--color-text-secondary)] leading-[1.6]">
+            Pick a starter on the left, or describe what you want to design. The result renders here
+            in a sandboxed preview.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyMark() {
+  return (
+    <svg
+      width="56"
+      height="56"
+      viewBox="0 0 56 56"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <title>open-codesign canvas</title>
+      <rect
+        x="8.5"
+        y="8.5"
+        width="39"
+        height="39"
+        rx="6"
+        stroke="var(--color-border-strong)"
+        strokeDasharray="3 4"
+        strokeWidth="1"
+      />
+      <rect
+        x="20"
+        y="20"
+        width="16"
+        height="16"
+        rx="3"
+        fill="var(--color-accent-soft)"
+        stroke="var(--color-accent)"
+        strokeWidth="1.4"
+      />
+      <circle cx="28" cy="28" r="3" fill="var(--color-accent)" />
+    </svg>
   );
 }
