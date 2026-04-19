@@ -31,6 +31,23 @@ export function isTrustedPreviewMessageSource(
   return source !== null && source === previewWindow;
 }
 
+// Convert a rect reported from inside the sandbox iframe (iframe-internal
+// viewport coords) into the parent renderer's viewport coords. The wrapper
+// applies `transform: scale(zoom/100)` to a div sized at `100/scale %`, so a
+// child at iframe-internal position P appears in the parent at P * scale.
+export function scaleRectForZoom(
+  rect: { top: number; left: number; width: number; height: number },
+  zoomPercent: number,
+): { top: number; left: number; width: number; height: number } {
+  const scale = zoomPercent / 100;
+  return {
+    top: rect.top * scale,
+    left: rect.left * scale,
+    width: rect.width * scale,
+    height: rect.height * scale,
+  };
+}
+
 const COMMENT_HINT_CLASS =
   'absolute left-[var(--space-5)] top-[var(--space-5)] z-10 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-[var(--space-3)] py-[var(--space-1)] text-[var(--text-xs)] text-[var(--color-text-secondary)] shadow-[var(--shadow-soft)] backdrop-blur';
 
@@ -44,6 +61,7 @@ export function PreviewPane({ onPickStarter }: PreviewPaneProps) {
   const pushIframeError = useCodesignStore((s) => s.pushIframeError);
   const selectCanvasElement = useCodesignStore((s) => s.selectCanvasElement);
   const previewViewport = useCodesignStore((s) => s.previewViewport);
+  const previewZoom = useCodesignStore((s) => s.previewZoom);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
@@ -55,7 +73,7 @@ export function PreviewPane({ onPickStarter }: PreviewPaneProps) {
           selector: event.data.selector,
           tag: event.data.tag,
           outerHTML: event.data.outerHTML,
-          rect: event.data.rect,
+          rect: scaleRectForZoom(event.data.rect, previewZoom),
         });
         return;
       }
@@ -74,7 +92,7 @@ export function PreviewPane({ onPickStarter }: PreviewPaneProps) {
 
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [pushIframeError, selectCanvasElement]);
+  }, [pushIframeError, selectCanvasElement, previewZoom]);
 
   let body: React.ReactNode;
   if (errorMessage) {
@@ -91,7 +109,7 @@ export function PreviewPane({ onPickStarter }: PreviewPaneProps) {
     body = <LoadingState />;
   } else if (previewHtml) {
     const isMobile = previewViewport === 'mobile';
-    const iframe = (
+    const rawIframe = (
       <iframe
         ref={iframeRef}
         key={previewHtml.length}
@@ -105,6 +123,23 @@ export function PreviewPane({ onPickStarter }: PreviewPaneProps) {
         }
       />
     );
+    const scale = previewZoom / 100;
+    const inversePct = `${10000 / previewZoom}%`;
+    const iframe =
+      previewZoom === 100 ? (
+        rawIframe
+      ) : (
+        <div
+          className="origin-top-left"
+          style={{
+            transform: `scale(${scale})`,
+            width: inversePct,
+            height: inversePct,
+          }}
+        >
+          {rawIframe}
+        </div>
+      );
 
     if (isMobile) {
       body = (
