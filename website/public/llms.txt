@@ -1,58 +1,76 @@
 # Open CoDesign
 
-> Open CoDesign is an open-source desktop AI design tool. The open-source alternative to Anthropic Claude Design. Bring your own API key (Anthropic, OpenAI, Gemini, DeepSeek, Ollama, any OpenAI-compatible relay). Everything runs locally. Apache-2.0 licensed.
+> Open CoDesign is an open-source desktop AI design tool. The open-source alternative to Anthropic Claude Design. Bring your own API key (Anthropic, OpenAI, Gemini, DeepSeek, OpenRouter, SiliconFlow, Ollama, any OpenAI-compatible relay). Everything runs locally. Apache-2.0 licensed.
 
 ## Key facts
 
 - Repository: https://github.com/OpenCoworkAI/open-codesign
 - Website: https://opencoworkai.github.io/open-codesign/
 - License: Apache-2.0
-- Stack: Electron, React 19, Vite 6, TypeScript, Tailwind v4
-- Local-first: SQLite (design history) + encrypted TOML config, nothing leaves the machine
-- BYOK: no API proxying, no per-token surcharges, no cloud account required
-- Supported providers: Anthropic Claude, OpenAI GPT, Google Gemini, DeepSeek, OpenRouter, local Ollama, any OpenAI-compatible endpoint
+- Latest release: v0.1.0 (2026-04-18), installers for macOS / Windows / Linux
+- Stack: Electron, React 19, Vite 6, TypeScript, Tailwind v4, better-sqlite3
+- Local-first: SQLite (design history) + encrypted TOML config via Electron `safeStorage`, nothing leaves the machine
+- BYOK: no API proxying, no per-token surcharges, no cloud account required, no telemetry by default
+- Supported providers: Anthropic Claude, OpenAI GPT, Google Gemini, DeepSeek, OpenRouter, SiliconFlow, local Ollama, any OpenAI-compatible endpoint. Keyless (IP-allowlisted) proxies supported.
 - Install size budget: ≤ 80 MB (enforced by CI)
-- Platforms: macOS (Apple Silicon + Intel), Windows, Linux
+- Platforms: macOS (Apple Silicon + Intel), Windows (x64 + arm64), Linux (AppImage)
+- Minimum Node for building from source: 22 LTS; pnpm 9.15+
 
 ## What it produces
 
-- Interactive HTML prototypes (sandboxed iframe, inlined CSS)
-- PPTX slide decks via pptxgenjs (coming soon)
-- PDF one-pagers via Playwright (coming soon)
-- Design-system-aware mockups derived from a user's local codebase (coming soon)
+- Interactive HTML prototypes (sandboxed iframe, inlined CSS, no external dependencies)
+- Interactive JSX / React components (vendored React 18 + Babel, rendered on-device)
+- PPTX slide decks via `pptxgenjs` (lazy-loaded)
+- PDF one-pagers via Puppeteer-core against local Chrome (lazy-loaded)
+- ZIP asset bundles (HTML + CSS + JS + assets, deterministic layout)
+- Markdown exports with embedded frontmatter
 
 ## Shipped features (v0.1)
 
-- Multi-provider onboarding — Anthropic, OpenAI, and any OpenAI-compatible relay
-- Prompt → HTML prototype in a sandboxed iframe
+- Unified provider model with dynamic model picker — every provider exposes its real model catalogue
+- One-click import from Claude Code and Codex configs (reads `~/.codex/config.toml` and `~/.claude/settings.json`)
+- Keyless provider support (IP-allowlisted corporate proxies and local Ollama)
+- Prompt → HTML or JSX/React component in a sandboxed iframe
+- Fifteen built-in demo prompts (landing page, dashboard, pitch slide, pricing, mobile app, chat UI, event calendar, blog article, receipt/invoice, portfolio, settings panel, email, cosmic-animation, organic-loaders, case-study)
+- Twelve built-in design skill modules (slide decks, dashboards, landing pages, SVG charts, glassmorphism, editorial typography, heroes, pricing, footers, chat UIs, data tables, calendars)
+- Anti-AI-slop design Skill injected into every generation
+- Live agent panel showing streaming tool calls
 - AI-generated tunable sliders — model emits design parameters (color, spacing, font); user drags to refine
 - Inline comment → AI patch loop — click any element, leave a note, model rewrites only that region
-- HTML export with inlined CSS
-- Generation cancellation
-- Settings page with per-provider API key management
-- Built-in anti-AI-slop design Skill (steers toward considered typography and purposeful whitespace)
+- Phone / tablet / desktop responsive preview frames
+- Files panel for inspecting multi-file artifacts before export
+- Instant design switching via preview-iframe pool (last five designs stay hot)
+- Connection diagnostic panel — one-click test for any provider
+- Light + dark themes; EN + 简体中文 UI with live toggle
+- Five export formats: HTML (inlined CSS), PDF (local Chrome), PPTX, ZIP, Markdown
+- Generation cancellation mid-stream
+- Four-tab Settings: Models, Appearance, Storage, Advanced
+- Release pipeline with signed DMG / EXE / AppImage
 
-## Coming soon
+## Coming soon (v0.2 — v0.5)
 
-- Version snapshots + side-by-side diff
 - Cost transparency (token estimate before generation, weekly spend in toolbar)
-- Codebase → design system (extract Tailwind tokens, CSS vars, W3C design tokens from a local repo)
+- Version snapshots + side-by-side diff + rollback
 - Three-style parallel exploration
-- PPTX and PDF export
-- Code-signing (Apple Developer ID + Windows Authenticode)
+- Codebase → design system (extract Tailwind tokens, CSS variables, W3C design tokens from a local repo)
+- Web capture via Playwright (on-demand)
+- Apple Developer ID notarization + Windows Authenticode code-signing
+- Homebrew Cask + winget + Scoop manifests verified
 
 ## Documentation
 
 - /quickstart : install + first generation in 90 seconds
 - /architecture : technical overview, package boundaries
-- /roadmap : phased plan to v1.0
+- /roadmap : phased plan from v0.1 → v1.0
 
 ## Differentiation vs Claude Design
 
-Open CoDesign is different from Claude Design in the following ways:
+Open CoDesign differs from Claude Design in the following ways:
 - Open CoDesign is open source (Apache-2.0); Claude Design is closed source.
 - Open CoDesign supports any AI model via BYOK; Claude Design uses Anthropic Opus only.
 - Open CoDesign runs entirely on the user's machine; Claude Design processes data in the cloud.
-- Open CoDesign costs only the token usage of the API key; Claude Design requires a paid subscription.
+- Open CoDesign costs only the token usage of the user's own API key; Claude Design requires a paid subscription.
 - Open CoDesign is a desktop application (Electron); Claude Design is a web application.
 - Open CoDesign stores all designs locally in SQLite with full version history; Claude Design has limited export and no import.
+- Open CoDesign ships twelve built-in design skill modules and fifteen ready-to-edit demo prompts; Claude Design is a blank canvas.
+- Open CoDesign reuses your existing Claude Code or Codex config in one click; Claude Design has no config-import path.

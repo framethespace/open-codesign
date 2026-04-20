@@ -25,7 +25,7 @@ hero:
 features:
   - icon: 🪶
     title: 自带模型
-    details: Anthropic、OpenAI、Gemini、DeepSeek，或任意 OpenAI 兼容中继——包括 keyless（IP 白名单）代理。设置里切 provider，我们不做代理，也不按 token 计费。
+    details: Anthropic、OpenAI、Gemini、DeepSeek、OpenRouter、SiliconFlow、本地 Ollama，或任意 OpenAI 兼容中继——包括 keyless（IP 白名单）代理。设置里切 provider，我们不做代理，也不按 token 计费。
   - icon: ⚡
     title: 一键导入配置
     details: 已经在用 Claude Code 或 Codex？Open CoDesign 直接读你的配置文件——provider、model、API Key，一次带过来。
@@ -33,8 +33,8 @@ features:
     title: 你的电脑就是云
     details: 设计稿、提示词、代码库扫描——SQLite 加密 TOML，全在本地磁盘。无需注册账号，默认无遥测。100% 本地。
   - icon: 🪄
-    title: Skills，而非魔法
-    details: 内置反 AI 糟粕设计 Skill。添加你自己的 SKILL.md，教会模型你的审美。不再有千篇一律的产出。
+    title: 12 个设计 Skill 开箱即用
+    details: 内置 12 个设计 skill 模块——仪表盘、落地页、幻灯片、定价页、聊天 UI、数据表格、日历、玻璃质感、编辑排版等等。在任何项目添加你自己的 SKILL.md，教会模型你的审美。
   - icon: 🎚️
     title: AI 生成的滑块
     details: 模型主动给出值得调的参数——颜色、间距、字体——拖一下即可微调，不用每次重新发送提示。
@@ -44,6 +44,9 @@ features:
   - icon: 🔀
     title: 设计间切换瞬答
     details: 最近 5 个 design 之间切换零延迟。预览 iframe 常驻内存——不重新解析、没白闪、不用等快照重载。
+  - icon: 📱
+    title: 桌面、平板、手机
+    details: 任一设计都能在真实手机框或平板宽度里预览，与完整画布并排查看。导出前先看响应式故事。
   - icon: 🧬
     title: 代码库 → 设计系统
     details: 指向本地仓库，我们抽取 Tailwind token、CSS 变量和 W3C 设计 token——之后每次生成都自动遵循。即将推出。
@@ -71,7 +74,7 @@ features:
   <div class="codesign-step">
     <span class="num">2</span>
     <h3>写一段提示</h3>
-    <p>用八个内置 demo，或者自由描述。第一版几秒内出现在沙箱 iframe 里。</p>
+    <p>从 <strong>15 个内置 demo</strong> 里选——落地页、仪表盘、演讲幻灯片、定价页、移动应用、聊天 UI、日历、博客文章、发票、作品集、邮件等等——或自由描述。第一版几秒内出现在沙箱 iframe 里。</p>
   </div>
   <div class="codesign-step">
     <span class="num">3</span>

@@ -59,9 +59,14 @@ export default defineConfig({
       {
         name: 'keywords',
         content:
-          'Claude Design alternative, open source AI design tool, BYOK design app, local-first design generator, Anthropic Claude Design open source, AI prototype generator, open-codesign, multi-model design, BYOK Electron app',
+          'Claude Design alternative, open source AI design tool, BYOK design app, local-first design generator, Anthropic Claude Design open source, AI prototype generator, prompt to HTML, prompt to React component, open-codesign, multi-model design, BYOK Electron app, AI design tool, AI slide deck generator, AI landing page generator, local AI design tool, Claude Code config import',
       },
     ],
+    ['meta', { name: 'robots', content: 'index,follow,max-image-preview:large' }],
+    ['meta', { name: 'author', content: 'OpenCoworkAI' }],
+    ['link', { rel: 'alternate', hreflang: 'en', href: SITE_URL }],
+    ['link', { rel: 'alternate', hreflang: 'zh-CN', href: `${SITE_URL}zh/` }],
+    ['link', { rel: 'alternate', hreflang: 'x-default', href: SITE_URL }],
     // JSON-LD — SoftwareApplication
     [
       'script',
@@ -76,6 +81,9 @@ export default defineConfig({
         url: SITE_URL,
         applicationCategory: 'DesignApplication',
         operatingSystem: 'macOS, Windows, Linux',
+        softwareVersion: '0.1.1',
+        releaseNotes: `${SITE_URL}#whats-working-today`,
+        downloadUrl: 'https://github.com/OpenCoworkAI/open-codesign/releases',
         offers: {
           '@type': 'Offer',
           price: '0',
@@ -90,7 +98,79 @@ export default defineConfig({
           url: 'https://github.com/OpenCoworkAI',
         },
         keywords:
-          'Claude Design alternative, open source AI design, BYOK, local-first, Anthropic, Electron desktop app',
+          'Claude Design alternative, open source AI design, BYOK, local-first, Anthropic, Electron desktop app, prompt to prototype, React component generator, AI design tool',
+      }),
+    ],
+    // JSON-LD — FAQPage (helps AI answers and Google rich results)
+    [
+      'script',
+      { type: 'application/ld+json' },
+      JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: [
+          {
+            '@type': 'Question',
+            name: 'What is Open CoDesign?',
+            acceptedAnswer: {
+              '@type': 'Answer',
+              text: 'Open CoDesign is an open-source desktop AI design tool that turns natural-language prompts into HTML prototypes, JSX/React components, slide decks, and marketing assets. It is the open-source alternative to Anthropic Claude Design and runs entirely on your laptop.',
+            },
+          },
+          {
+            '@type': 'Question',
+            name: 'Is Open CoDesign free?',
+            acceptedAnswer: {
+              '@type': 'Answer',
+              text: 'Yes. Open CoDesign is Apache-2.0 licensed and free to download and use. You bring your own API key for any supported model provider and pay only the token cost to that provider. There is no subscription, no cloud account, and no per-token surcharge from us.',
+            },
+          },
+          {
+            '@type': 'Question',
+            name: 'Which AI models can I use with Open CoDesign?',
+            acceptedAnswer: {
+              '@type': 'Answer',
+              text: 'Anthropic Claude, OpenAI GPT, Google Gemini, DeepSeek, OpenRouter, SiliconFlow, local Ollama, and any OpenAI-compatible endpoint. Keyless (IP-allowlisted) corporate proxies are also supported.',
+            },
+          },
+          {
+            '@type': 'Question',
+            name: 'Does Open CoDesign send my data to the cloud?',
+            acceptedAnswer: {
+              '@type': 'Answer',
+              text: 'No. All designs, prompts, and configuration live on your machine — SQLite for history and encrypted TOML (via Electron safeStorage) for configuration. The only outbound network traffic is to the model provider you configure.',
+            },
+          },
+          {
+            '@type': 'Question',
+            name: 'How is Open CoDesign different from Claude Design?',
+            acceptedAnswer: {
+              '@type': 'Answer',
+              text: 'Open CoDesign is open source, runs locally, supports any AI model via BYOK, ships twelve built-in design skill modules and fifteen demo prompts, imports your existing Claude Code or Codex config in one click, and exports to HTML, PDF, PPTX, ZIP, and Markdown. Claude Design is closed source, cloud-only, Anthropic-only, subscription-priced, and has limited export.',
+            },
+          },
+          {
+            '@type': 'Question',
+            name: 'Which platforms are supported?',
+            acceptedAnswer: {
+              '@type': 'Answer',
+              text: 'macOS (Apple Silicon and Intel), Windows (x64 and arm64), and Linux (AppImage). The install size is under 80 MB and heavy features like PDF and PPTX export are lazy-loaded.',
+            },
+          },
+        ],
+      }),
+    ],
+    // JSON-LD — Organization
+    [
+      'script',
+      { type: 'application/ld+json' },
+      JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'Organization',
+        name: 'OpenCoworkAI',
+        url: 'https://github.com/OpenCoworkAI',
+        logo: `${SITE_URL}logo.png`,
+        sameAs: ['https://github.com/OpenCoworkAI', 'https://twitter.com/OpenCoworkAI'],
       }),
     ],
   ],
@@ -114,7 +194,10 @@ export default defineConfig({
       { text: 'Quickstart', link: '/quickstart' },
       { text: 'Architecture', link: '/architecture' },
       { text: 'Roadmap', link: '/roadmap' },
-      { text: 'Pricing', link: '/quickstart#add-your-api-key' },
+      {
+        text: 'Changelog',
+        link: 'https://github.com/OpenCoworkAI/open-codesign/blob/main/CHANGELOG.md',
+      },
       { text: 'GitHub', link: 'https://github.com/OpenCoworkAI/open-codesign' },
     ],
 
@@ -131,6 +214,10 @@ export default defineConfig({
         items: [
           { text: 'Architecture', link: '/architecture' },
           { text: 'Roadmap', link: '/roadmap' },
+          {
+            text: 'Changelog',
+            link: 'https://github.com/OpenCoworkAI/open-codesign/blob/main/CHANGELOG.md',
+          },
         ],
       },
     ],

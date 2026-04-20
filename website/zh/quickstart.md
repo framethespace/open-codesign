@@ -1,55 +1,61 @@
 ---
 title: 快速开始
-description: 90 秒安装 Open CoDesign，跑通你的第一个设计。
+description: 90 秒在 macOS / Windows / Linux 上跑通 Open CoDesign，渲染第一个 AI 生成原型。
 ---
 
 # 快速开始
 
-> Open CoDesign 处于 pre-alpha 阶段。安装包计划在 v0.5 提供，目前先从源码运行。
+三步让 Open CoDesign 在你的电脑上跑起来。
 
-## 1. 克隆并安装
+## 1. 安装
+
+从 [GitHub Releases](https://github.com/OpenCoworkAI/open-codesign/releases) 下载对应平台的安装包：
+
+| 平台 | 文件 |
+|---|---|
+| macOS（Apple Silicon）| `open-codesign-*-arm64.dmg` |
+| macOS（Intel）| `open-codesign-*.dmg` |
+| Windows（x64 / arm64）| `open-codesign-*-setup.exe` |
+| Linux | `open-codesign-*.AppImage` |
+
+::: tip v0.1 说明
+v0.1 安装包暂未签名。**macOS**：右键 → 打开，或执行 `xattr -d com.apple.quarantine /Applications/open-codesign.app`。**Windows**：SmartScreen → 更多信息 → 仍要运行。希望已验证的构建？请从源码自行编译，参见[架构](../architecture)。
+:::
+
+## 2. 添加 provider
+
+首次启动会打开设置页面，三种入口二选一：
+
+- **从 Claude Code 或 Codex 导入** — 一键导入，我们直接读 `~/.codex/config.toml` 和 `~/.claude/settings.json`，把 provider、model、API Key 一次带过来。
+- **手动添加** — 粘贴任意 API Key，provider 根据前缀自动识别（`sk-ant-…` → Anthropic，`sk-…` → OpenAI，等等）。
+- **Keyless** — IP 白名单代理（企业网关、本地 Ollama），Key 留空即可。
+
+开箱支持：Anthropic Claude、OpenAI GPT、Google Gemini、DeepSeek、OpenRouter、SiliconFlow、本地 Ollama，以及任何 OpenAI 兼容端点。凭证通过 Electron `safeStorage` 加密存储于 `~/.config/open-codesign/config.toml`，不会上传。
+
+## 3. 输入第一条提示
+
+从 Hub 选一个内置 demo，或者自由描述。第一版几秒内就会出现在沙箱 iframe 里——HTML 或实时 React 组件，取决于提示内容。
+
+## 接下来试试
+
+- **行内评论** — 在预览中点击任意元素，留下评论。模型只重写该区域。
+- **可调滑块** — 模型主动给出值得调的参数（颜色、间距、字体），拖动即可微调，无需重发提示。
+- **切换设计** — 最近 5 个设计的预览 iframe 常驻内存，切换零延迟。
+- **导出** — HTML、PDF（本机 Chrome）、PPTX、ZIP、Markdown，全部本地生成。
+
+## 从源码构建
 
 ```bash
 git clone https://github.com/OpenCoworkAI/open-codesign.git
 cd open-codesign
 pnpm install
-```
-
-## 2. 配置 API 密钥
-
-新建 `~/.config/open-codesign/config.toml`：
-
-```toml
-schemaVersion = 1
-
-[providers.anthropic]
-key = "sk-ant-…"
-
-# 也可以用任意 OpenAI 兼容端点
-# [providers.openrouter]
-# key  = "sk-or-…"
-# base = "https://openrouter.ai/api/v1"
-```
-
-provider 会根据密钥前缀自动识别。没有后端、没有遥测、没有云账号。
-
-## 3. 启动桌面壳
-
-```bash
 pnpm dev
 ```
 
-Electron 窗口会带着八个内置 demo 启动，点 **Calm Spaces** 走通第一个端到端流程。
-
-## 4. 之后能做什么
-
-- 在预览里点中元素、留下评论，模型只重写那一块。
-- 拖动 AI 给出的滑块，无需重新提示就能调出新的色彩、间距与字体。
-- 把代码库扫描器指向你的某个仓库，我们抽取 token 后所有后续生成都自动套用。
-- 从分享菜单导出 PDF 或 PPTX（按需懒加载，不会拖慢冷启动）。
+需要 Node 22 LTS 与 pnpm 9.15+。仓库结构参见[架构](../architecture)。
 
 ## 继续阅读
 
-- [架构](../architecture)
-- [路线图](../roadmap)
-- [愿景文档](https://github.com/OpenCoworkAI/open-codesign/blob/main/docs/VISION.md)
+- [架构](../architecture) — 包如何组合。
+- [路线图](../roadmap) — 按版本规划。
+- [GitHub Issues](https://github.com/OpenCoworkAI/open-codesign/issues) — 报 bug 或提需求。

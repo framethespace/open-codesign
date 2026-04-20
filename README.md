@@ -93,15 +93,15 @@ Credentials stay in `~/.config/open-codesign/config.toml`, encrypted via Electro
 
 ### 3. Type your first prompt
 
-Pick one of the eight built-in demos or describe your own. A sandboxed prototype appears in seconds.
+Pick one of **fifteen built-in demos** — landing page, dashboard, pitch slide, pricing, mobile app, chat UI, event calendar, blog article, receipt/invoice, portfolio, settings panel, and more — or describe your own. A sandboxed prototype appears in seconds.
 
 ---
 
 ## Built-in Anthropic-style design intelligence
 
-Generic AI tools produce generic output. Open CoDesign ships with a built-in **anti-AI-slop design Skill** — a curated instruction set that steers the model toward considered typography, purposeful whitespace, and meaningful color, not `#3B82F6` blue buttons on every artifact.
+Generic AI tools produce generic output. Open CoDesign ships with **twelve built-in design skill modules** — slide decks, dashboards, landing pages, SVG charts, glassmorphism, editorial typography, heroes, pricing, footers, chat UIs, data tables, and calendars — plus an **anti-AI-slop design Skill** that steers the model toward considered typography, purposeful whitespace, and meaningful color, not `#3B82F6` blue buttons on every artifact.
 
-The first version of this Skill is already in every generation. Before the model writes a line of CSS, it reasons through layout intent, design system coherence, and contrast — the same editorial discipline behind Claude Design's best outputs, available on any model you bring.
+Every skill is already in every generation. Before the model writes a line of CSS, it picks the right skill for the brief and reasons through layout intent, design-system coherence, and contrast — the same editorial discipline behind Claude Design's best outputs, available on any model you bring.
 
 Add a `SKILL.md` to any project to teach the model your own taste.
 
@@ -109,19 +109,23 @@ Add a `SKILL.md` to any project to teach the model your own taste.
 
 ## What's working today
 
-- Unified provider model — Anthropic, OpenAI, Gemini, DeepSeek, or any OpenAI-compatible relay; keyless (IP-allowlisted) proxies supported
-- One-click import from Claude Code and Codex configs — bring your existing providers, models, and keys in a single click
-- Dynamic model picker — every provider exposes its real model catalogue, not a hardcoded shortlist
-- Prompt → HTML **or JSX/React component** prototype, rendered in a sandboxed iframe (vendored React 18 + Babel on-device)
-- Live agent panel — watch tool calls stream in real time as the model edits files
-- AI-generated sliders: model emits the parameters worth tweaking (color, spacing, font); drag to refine with zero round-trip
-- Comment mode: click any element in the preview to drop a pin, leave a note, model rewrites only that region
-- Instant design switching — the last five designs keep their preview iframes alive, so Hub ↔ Workspace and sidebar navigation stay zero-delay
-- Five export formats — HTML (inlined CSS), PDF (local Chrome), PPTX, ZIP, Markdown
-- Bilingual UI — English and 简体中文
-- Generation cancellation
-- Settings with per-provider API key management
-- GitHub Release pipeline (macOS DMG, Windows EXE, Linux AppImage)
+- **Unified provider model** — Anthropic, OpenAI, Gemini, DeepSeek, OpenRouter, SiliconFlow, local Ollama, or any OpenAI-compatible relay; keyless (IP-allowlisted) proxies supported
+- **One-click import** from Claude Code and Codex configs — bring your existing providers, models, and keys in a single click
+- **Dynamic model picker** — every provider exposes its real model catalogue, not a hardcoded shortlist
+- **Prompt → HTML or JSX/React component** prototype, rendered in a sandboxed iframe (vendored React 18 + Babel on-device)
+- **Fifteen built-in demos + twelve design skill modules** — ready-to-edit starting points for every common design brief
+- **Live agent panel** — watch tool calls stream in real time as the model edits files
+- **AI-generated sliders** — the model emits the parameters worth tweaking (color, spacing, font); drag to refine with zero round-trip
+- **Comment mode** — click any element in the preview to drop a pin, leave a note, model rewrites only that region
+- **Phone / tablet / desktop preview** — true responsive frames, switch with one click
+- **Files panel** — inspect multi-file artifacts (HTML, CSS, JS) before export
+- **Instant design switching** — the last five designs keep their preview iframes alive, so Hub ↔ Workspace and sidebar navigation stay zero-delay
+- **Connection diagnostic panel** — one-click test for any provider, with actionable errors
+- **Light + dark themes**, **EN + 简体中文 UI** with live toggle
+- **Five export formats** — HTML (inlined CSS), PDF (local Chrome), PPTX, ZIP, Markdown
+- **Generation cancellation** — stop mid-stream without losing prior turns
+- **Settings with four tabs** — Models (providers + keys), Appearance (theme/language), Storage (config + data paths), Advanced (update channel)
+- **GitHub Release pipeline** — signed DMG (macOS), EXE (Windows), AppImage (Linux)
 
 ---
 

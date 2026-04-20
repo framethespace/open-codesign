@@ -25,7 +25,7 @@ hero:
 features:
   - icon: 🪶
     title: Bring your own model
-    details: Anthropic, OpenAI, Gemini, DeepSeek, or any OpenAI-compatible relay — including keyless (IP-allowlisted) proxies. Switch providers in Settings. We don't proxy, we don't charge per token.
+    details: Anthropic, OpenAI, Gemini, DeepSeek, OpenRouter, SiliconFlow, local Ollama, or any OpenAI-compatible relay — including keyless (IP-allowlisted) proxies. Switch providers in Settings. We don't proxy, we don't charge per token.
   - icon: ⚡
     title: Import in one click
     details: Already using Claude Code or Codex? Open CoDesign reads your existing config — providers, models, API keys — and brings it all in with a single click.
@@ -33,14 +33,20 @@ features:
     title: Your laptop is the cloud
     details: Designs, prompts, codebase scans — SQLite + encrypted TOML on disk. No mandatory account, no telemetry by default. 100% local.
   - icon: 🪄
-    title: Skills, not magic
-    details: Anti-AI-slop design Skill ships built-in. Add your own SKILL.md to teach the model your taste. No generic outputs.
+    title: Twelve design skills, not magic
+    details: Twelve built-in design skill modules ship out of the box — dashboards, landing pages, slide decks, pricing pages, chat UIs, data tables, calendars, glassmorphism, editorial typography and more. Drop a SKILL.md into any project to teach the model your own taste.
   - icon: 🎚️
     title: AI-tuned sliders
     details: The model emits the parameters worth tweaking — color, spacing, font — and you drag to refine. No round-tripping the LLM for every nudge.
   - icon: 🔀
     title: Instant design switching
     details: Hop between your last five designs with zero delay. Preview iframes stay alive in memory — no reparse, no white flash, no waiting for snapshots to reload.
+  - icon: 📱
+    title: Desktop, tablet, phone
+    details: Preview any artifact in a true phone frame or tablet width, side-by-side with the full canvas. See the responsive story before you export.
+  - icon: 💬
+    title: Comment, don't retype
+    details: Click any element in the preview to drop a pin. Leave a note. The model rewrites only that region — no more re-prompting the whole page to move a button.
   - icon: 🧬
     title: Codebase to design system
     details: Point at a local repo. We extract Tailwind tokens, CSS vars, and W3C design tokens — every subsequent generation respects them. Coming soon.
@@ -50,9 +56,6 @@ features:
   - icon: 💸
     title: Cost transparency
     details: Token estimate before each generation. Weekly spend in the toolbar. Set a budget, get warned, never get surprised. Coming soon.
-  - icon: 💬
-    title: Comment, don't retype
-    details: Click any element in the preview to drop a pin. Leave a note. The model rewrites only that region — no more re-prompting the whole page to move a button.
   - icon: 🚢
     title: Five exports, real files
     details: HTML (inlined CSS), PDF (via your local Chrome), PPTX, ZIP, and Markdown — all generated on-device. No Canva detour.
@@ -71,7 +74,7 @@ features:
   <div class="codesign-step">
     <span class="num">2</span>
     <h3>Type a prompt</h3>
-    <p>Pick one of eight built-in demos or describe your own. The first design renders in seconds, in a sandboxed iframe.</p>
+    <p>Pick one of <strong>fifteen built-in demos</strong> — landing page, dashboard, pitch slide, pricing page, mobile app, chat UI, calendar, blog article, receipt, portfolio, email, and more — or describe your own. The first design renders in seconds in a sandboxed iframe.</p>
   </div>
   <div class="codesign-step">
     <span class="num">3</span>

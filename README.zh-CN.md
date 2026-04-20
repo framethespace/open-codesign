@@ -93,15 +93,15 @@ scoop install opencowork/open-codesign
 
 ### 3. 输入第一个提示词
 
-从八个内置 demo 中选一个，或者自由描述你的想法。沙箱原型几秒内就会出现。
+从**十五个内置 demo** 中选一个——落地页、仪表盘、演讲幻灯片、定价、移动应用、聊天 UI、事件日历、博客文章、发票、作品集、设置面板等等——或者自由描述你的想法。沙箱原型几秒内就会出现。
 
 ---
 
 ## 内置 Anthropic 风格的设计智能
 
-通用 AI 工具产出通用结果。Open CoDesign 内置**反 AI 糟粕设计 Skill**——一套精心打磨的指令集，引导模型走向深思熟虑的排版、有意义的留白和有目的的配色，而不是每个产物都用 `#3B82F6` 蓝色按钮。
+通用 AI 工具产出通用结果。Open CoDesign 内置 **12 个设计 skill 模块**——幻灯片、仪表盘、落地页、SVG 图表、玻璃质感、编辑排版、Hero、定价、页脚、聊天 UI、数据表格、日历——还有一套**反 AI 糟粕设计 Skill**，引导模型走向深思熟虑的排版、有意义的留白和有目的的配色，而不是每个产物都用 `#3B82F6` 蓝色按钮。
 
-这个 Skill 的第一版已经在每次生成中生效。在模型写出一行 CSS 之前，它会先推理布局意图、设计系统连贯性和对比度——这和 Claude Design 最优秀产出背后的编辑纪律一致，适用于你带来的任何模型。
+每个 skill 都已经在每次生成中生效。在模型写出一行 CSS 之前，它会先挑选适合的 skill，再推理布局意图、设计系统连贯性和对比度——这和 Claude Design 最优秀产出背后的编辑纪律一致，适用于你带来的任何模型。
 
 在任何项目中添加 `SKILL.md`，即可教会模型你自己的审美。
 
@@ -109,19 +109,23 @@ scoop install opencowork/open-codesign
 
 ## 当前已实现功能
 
-- 统一 provider 模型 — Anthropic、OpenAI、Gemini、DeepSeek，或任意 OpenAI 兼容中继；支持 keyless（IP 白名单）代理
-- Claude Code / Codex 配置一键导入 — 把已有的 provider、model、API Key 一次带过来
-- 动态 model 选择器 — 每个 provider 显示自己真实的模型目录，不再写死
-- 提示词 → HTML **或 JSX/React 组件** 原型，在沙箱 iframe 中渲染（vendored React 18 + Babel，全在本机）
-- 实时 agent 面板 — 模型调用工具写文件时的 tool call 流实时可见
-- AI 生成滑块：模型主动给出值得调整的参数（颜色、间距、字体），拖动即可零往返微调
-- 评论模式：在预览中点击任意元素落一枚 pin 留下评论，模型只重写该区域
-- 设计间切换瞬答 — 最近 5 个 design 的预览 iframe 常驻内存，Hub ↔ 工作区、侧栏切换都是零延迟
-- 五种导出格式 — HTML（内联 CSS）、PDF（本机 Chrome）、PPTX、ZIP、Markdown
-- 双语界面 — English 和简体中文
-- 生成取消
-- 设置页面，支持各 provider 独立 API Key 管理
-- GitHub Release 流水线（macOS DMG、Windows EXE、Linux AppImage）
+- **统一 provider 模型** — Anthropic、OpenAI、Gemini、DeepSeek、OpenRouter、SiliconFlow、本地 Ollama，或任意 OpenAI 兼容中继；支持 keyless（IP 白名单）代理
+- **Claude Code / Codex 配置一键导入** — 把已有的 provider、model、API Key 一次带过来
+- **动态 model 选择器** — 每个 provider 显示自己真实的模型目录，不再写死
+- **提示词 → HTML 或 JSX/React 组件**原型，在沙箱 iframe 中渲染（vendored React 18 + Babel，全在本机）
+- **15 个内置 demo + 12 个设计 skill 模块** — 覆盖常见设计命题的即用起点
+- **实时 agent 面板** — 模型调用工具写文件时的 tool call 流实时可见
+- **AI 生成滑块** — 模型主动给出值得调整的参数（颜色、间距、字体），拖动即可零往返微调
+- **评论模式** — 在预览中点击任意元素落一枚 pin 留下评论，模型只重写该区域
+- **手机 / 平板 / 桌面预览** — 真实响应式框，一键切换
+- **文件面板** — 导出前检查多文件 artifact（HTML、CSS、JS）
+- **设计间切换瞬答** — 最近 5 个 design 的预览 iframe 常驻内存，Hub ↔ 工作区、侧栏切换都是零延迟
+- **连接诊断面板** — 任意 provider 一键测试，附可操作的错误信息
+- **浅色 + 深色主题**，**EN + 简体中文** 界面，支持实时切换
+- **五种导出格式** — HTML（内联 CSS）、PDF（本机 Chrome）、PPTX、ZIP、Markdown
+- **生成取消** — 随时打断流式输出，之前的轮次不丢失
+- **设置页面四个 tab** — Models（provider + key）、Appearance（主题 / 语言）、Storage（配置与数据路径）、Advanced（更新通道）
+- **GitHub Release 流水线** — 签名 DMG（macOS）、EXE（Windows）、AppImage（Linux）
 
 ---
 

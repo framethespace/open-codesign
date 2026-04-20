@@ -1,9 +1,13 @@
 {
   "name": "@open-codesign/desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenCoworkAI/open-codesign.git"
+  },
   "scripts": {
     "postinstall": "node scripts/install-sqlite-bindings.cjs",
     "dev": "electron-vite dev",

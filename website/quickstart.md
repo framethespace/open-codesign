@@ -1,55 +1,61 @@
 ---
 title: Quickstart
-description: Install Open CoDesign and create your first design in 90 seconds.
+description: Install Open CoDesign and render your first AI-generated prototype in 90 seconds.
 ---
 
 # Quickstart
 
-> Open CoDesign is pre-alpha. Installers ship at v0.5. Until then, run from source.
+Get Open CoDesign running on macOS, Windows, or Linux in three steps.
 
-## 1. Clone and install
+## 1. Install
+
+Download the matching installer from [GitHub Releases](https://github.com/OpenCoworkAI/open-codesign/releases):
+
+| Platform | File |
+|---|---|
+| macOS (Apple Silicon) | `open-codesign-*-arm64.dmg` |
+| macOS (Intel) | `open-codesign-*.dmg` |
+| Windows (x64 / arm64) | `open-codesign-*-setup.exe` |
+| Linux | `open-codesign-*.AppImage` |
+
+::: tip v0.1 note
+v0.1 installers are unsigned. **macOS**: right-click → Open, or run `xattr -d com.apple.quarantine /Applications/open-codesign.app`. **Windows**: SmartScreen → More info → Run anyway. A verified build? Compile from source — see [Architecture](./architecture).
+:::
+
+## 2. Add a provider
+
+First launch opens the Settings page. Pick one path:
+
+- **Import from Claude Code or Codex** — one click, we read your existing config (`~/.codex/config.toml`, `~/.claude/settings.json`) and bring every provider, model, and key over.
+- **Manual** — paste any API key. Provider is auto-detected from prefix (`sk-ant-…` → Anthropic, `sk-…` → OpenAI, etc.).
+- **Keyless** — for IP-allowlisted proxies (enterprise gateways, local Ollama), leave the key blank.
+
+Supported out of the box: Anthropic Claude, OpenAI GPT, Google Gemini, DeepSeek, OpenRouter, SiliconFlow, local Ollama, and any OpenAI-compatible endpoint. Credentials stay in `~/.config/open-codesign/config.toml`, encrypted via Electron `safeStorage`. Nothing is uploaded.
+
+## 3. Type your first prompt
+
+Pick one of eight built-in demos from the Hub, or type your own. The first artifact renders in seconds inside a sandboxed iframe — HTML or a live React component, depending on what the prompt calls for.
+
+## What to try next
+
+- **Inline comment** — click any element in the preview, leave a note. The model rewrites only that region.
+- **Tunable sliders** — the model exposes the parameters worth tuning (color, spacing, font). Drag to refine without round-tripping.
+- **Switch designs** — the last five designs keep their preview iframes alive for zero-delay switching.
+- **Export** — HTML, PDF (via your local Chrome), PPTX, ZIP, or Markdown, all generated on-device.
+
+## Build from source
 
 ```bash
 git clone https://github.com/OpenCoworkAI/open-codesign.git
 cd open-codesign
 pnpm install
-```
-
-## 2. Add an API key
-
-Create `~/.config/open-codesign/config.toml`:
-
-```toml
-schemaVersion = 1
-
-[providers.anthropic]
-key = "sk-ant-…"
-
-# Optional: any OpenAI-compatible endpoint also works
-# [providers.openrouter]
-# key  = "sk-or-…"
-# base = "https://openrouter.ai/api/v1"
-```
-
-The provider is auto-detected from the key prefix. No backend, no telemetry, no cloud account.
-
-## 3. Run the desktop shell
-
-```bash
 pnpm dev
 ```
 
-The Electron window opens with eight built-in demo prompts. Pick **Calm Spaces** to render the first prototype end-to-end.
-
-## 4. What you can do next
-
-- Click any element in the preview, leave a comment, watch the model rewrite that region only.
-- Drag the AI-generated sliders to tune color, spacing, and typography without re-prompting.
-- Point the codebase scanner at one of your repositories — we will extract the design tokens and apply them to every following generation.
-- Export to PDF or PPTX from the share menu (lazy-loaded, so the cold-start bundle stays small).
+Requires Node 22 LTS and pnpm 9.15+. See [Architecture](./architecture) for the repo layout.
 
 ## Going further
 
 - [Architecture](./architecture) — how the packages fit together.
-- [Roadmap](./roadmap) — what is shipping when.
-- [Vision](https://github.com/OpenCoworkAI/open-codesign/blob/main/docs/VISION.md) — the locked product decisions.
+- [Roadmap](./roadmap) — what ships when.
+- [GitHub Issues](https://github.com/OpenCoworkAI/open-codesign/issues) — bug reports and feature requests.

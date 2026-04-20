@@ -1,40 +1,52 @@
 ---
 title: Roadmap
-description: What ships when. Living document.
+description: What ships when. Living document, tracked alongside the code.
 ---
 
 # Roadmap
 
-The full source of truth lives in [`docs/ROADMAP.md`](https://github.com/OpenCoworkAI/open-codesign/blob/main/docs/ROADMAP.md). Excerpt below.
+Living plan from v0.1 → v1.0. Phases are cumulative — each stage builds on the last.
 
-## Phase 0 — Foundations (current)
+## v0.1 — Shipped (April 2026)
 
-Repo is ready to accept code. Apache-2.0, DCO, pnpm + Turborepo + Biome + TypeScript + Vitest scaffold, CI for lint / typecheck / test / size budget.
+First public release, installers for macOS (DMG), Windows (EXE), and Linux (AppImage).
 
-## Phase 1 — Spike
+- Unified provider model — Anthropic, OpenAI, Gemini, DeepSeek, or any OpenAI-compatible relay; keyless (IP-allowlisted) proxies supported
+- One-click import from Claude Code and Codex configs
+- Dynamic model picker — every provider exposes its real model catalogue
+- Prompt → HTML **or JSX/React component** prototype in a sandboxed iframe (vendored React 18 + Babel)
+- Live agent panel — tool calls stream in real time
+- AI-generated sliders and inline comment mode (pin + AI region-rewrite)
+- Instant design switching via preview pool
+- Five export formats — HTML, PDF, PPTX, ZIP, Markdown
+- Bilingual UI (English + 简体中文)
+- Built-in anti-AI-slop design Skill
 
-Prove the architecture with one demo, no UI polish. Providers wraps pi-ai, runtime renders one HTML artifact in an iframe sandbox, core orchestrates prompt → model → artifact → render. Demo: **Calm Spaces meditation app**.
+## v0.2 — Cost + versions (next)
 
-## Phase 2 — Three demos
+Cost transparency (token estimate before each generation, weekly spend in the toolbar), version snapshots with side-by-side diff and rollback, three-style parallel exploration.
 
-PPTX export via `pptxgenjs` + `dom-to-pptx`, PDF via Puppeteer-core against system Chrome, settings page with API key + model picker. Demos: meditation app, case study one-pager, pitch deck.
+## v0.3 — Codebase → design system
 
-## Phase 3 — Killer interactions
+Point at a local repo; we extract Tailwind tokens, CSS variables, and W3C design tokens, and every subsequent generation respects them.
 
-Inline comment → AI patch loop (str_replace + stable `data-codesign-id`), AI-emitted custom sliders, version timeline with snapshot rollback.
+## v0.4 — Web capture + handoff
 
-## Phase 4 — Ecosystem features
+Playwright-powered web capture (on-demand), handoff bundle to open-cowork, external skill packs.
 
-Codebase scanner → design system extraction, Web Capture (Playwright on demand), handoff bundle to open-cowork. All eight killer demos working.
+## v0.5 — Signing + distribution
 
-## Phase 5 — Release polish
+Apple Developer ID + Windows Authenticode code-signing, opt-in auto-update, Homebrew Cask + winget + Scoop manifests verified, install size ≤ 80 MB enforced at release time.
 
-Mac notarization + Windows Authenticode, Homebrew Cask + winget + scoop, opt-in auto-update, install size verified ≤ 80 MB, onboarding ≤ 3 steps, public 1.0.
+## v1.0 — Public milestone
+
+Onboarding ≤ 3 steps, full bilingual docs, stable public API for packages/core and packages/providers.
 
 ## Deferred (post-1.0)
 
-Real-time collaboration, MCP server interface, Claude Artifacts `<artifact>` import, plugin loading inside open-cowork, hosted demo site, Linux installer, mobile companion (read-only).
+Real-time collaboration, MCP server interface, Claude Artifacts `<artifact>` import, plugin loading inside open-cowork, hosted demo site, mobile companion (read-only).
 
 ## Anti-goals
 
 Built-in payment, user accounts, cloud sync, stock asset library, custom model fine-tuning, team admin console.
+
