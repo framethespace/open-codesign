@@ -180,18 +180,28 @@ export function DesignCardPreview({ design }: DesignCardPreviewProps) {
   return (
     <div ref={rootRef} className="absolute inset-0 overflow-hidden bg-white">
       {srcDoc ? (
-        <iframe
-          title={design.name}
-          srcDoc={srcDoc}
-          sandbox={isJsx ? 'allow-scripts' : ''}
-          className="pointer-events-none border-0"
+        // Scale wrapper → iframe strategy: Chromium may defer script execution
+        // for iframes with a direct CSS `transform: scale(...)` when the
+        // post-transform visible size is tiny (hub thumbnails post-scale look
+        // like ~280x211). Putting transform on a PARENT and letting the iframe
+        // keep its natural 1280x960 matches PreviewPane's layout and lets the
+        // renderer treat the iframe as full-size for execution scheduling.
+        <div
           style={{
             width: '1280px',
             height: '960px',
             transform: `scale(${scale})`,
             transformOrigin: 'top left',
           }}
-        />
+        >
+          <iframe
+            title={design.name}
+            srcDoc={srcDoc}
+            sandbox={isJsx ? 'allow-scripts' : ''}
+            className="pointer-events-none border-0"
+            style={{ width: '1280px', height: '960px' }}
+          />
+        </div>
       ) : failed ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-[var(--space-2)] bg-[var(--color-background-secondary)] text-[var(--color-text-muted)]">
           <Plus className="w-5 h-5 opacity-40" strokeWidth={1.5} aria-hidden />

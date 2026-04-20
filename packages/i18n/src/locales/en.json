@@ -70,6 +70,10 @@
     "commentMode": "Comment mode",
     "commentModeHint": "Click any element to comment",
     "runtimeError": "Preview runtime error",
+    "error": {
+      "brokenJsx": "This design has a syntax error, likely an incomplete early save. Regenerate or edit to fix.",
+      "undefinedRef": "The design references an undefined variable or component. Likely a mid-run abort — try regenerating."
+    },
     "dismissErrors": "Dismiss preview errors",
     "zoom": "Zoom"
   },

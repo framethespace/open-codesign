@@ -72,6 +72,10 @@
     "commentMode": "评论模式",
     "commentModeHint": "点击任意元素留评",
     "runtimeError": "预览运行时错误",
+    "error": {
+      "brokenJsx": "此设计的代码有语法错误，可能是早期版本保存的不完整内容。重新生成或编辑修复即可。",
+      "undefinedRef": "设计引用了未定义的变量或组件。可能是生成中途中断——尝试重新生成。"
+    },
     "dismissErrors": "关闭预览错误",
     "zoom": "缩放"
   },
