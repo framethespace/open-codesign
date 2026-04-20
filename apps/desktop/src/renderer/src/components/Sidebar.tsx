@@ -237,7 +237,7 @@ export function Sidebar({ prompt, setPrompt, onSubmit }: SidebarProps) {
           {/* Chat scroll area */}
           <div className="flex-1 overflow-y-auto px-[var(--space-4)] py-[var(--space-4)]">
             <ChatMessageList
-              messages={chatMessages}
+              messages={chatMessages.filter((m) => m.designId === currentDesignId)}
               loading={!chatLoaded}
               empty={
                 <p className="text-[var(--text-sm)] text-[var(--color-text-muted)] leading-[var(--leading-body)]">

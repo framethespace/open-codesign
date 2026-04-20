@@ -95,7 +95,27 @@ export interface ChatToolCallPayload {
   startedAt: string;
   durationMs?: number;
   verbGroup: string;
+  toolCallId?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Virtual FS (Workstream E — Phase 2 agent tools)
+//
+// Per-design file tree stored in SQLite, written by the text_editor tool via
+// the agent runtime. Paths are POSIX-relative ("index.html",
+// "_starters/ios-frame.jsx"); never absolute, never contain "..".
+// ---------------------------------------------------------------------------
+
+export const DesignFileV1 = z.object({
+  schemaVersion: z.literal(1).default(1),
+  id: z.string().min(1),
+  designId: z.string().min(1),
+  path: z.string().min(1),
+  content: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type DesignFile = z.infer<typeof DesignFileV1>;
 
 // ---------------------------------------------------------------------------
 // Comments (Workstream D — inline comment mode)

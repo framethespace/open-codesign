@@ -65,6 +65,42 @@ export type BuiltinSkillId = (typeof BUILTIN_SKILLS)[number];
 
 export type PreviewViewport = 'desktop' | 'tablet' | 'mobile';
 
+// Workstream G — canvas file tabs.
+// `files` is the always-present first tab that shows the Design Files browser.
+// `file` tabs wrap a single file preview (today only index.html, derived from
+// the latest snapshot; post-Workstream E any path in the virtual FS). The
+// open-set is purely UI state — closing a tab does NOT delete the file.
+export type CanvasTab = { kind: 'files' } | { kind: 'file'; path: string };
+
+export const FILES_TAB: CanvasTab = { kind: 'files' };
+
+// Pure reducers, exported for unit tests so we don't need RTL for slice logic.
+export function openFileTab(tabs: CanvasTab[], path: string): { tabs: CanvasTab[]; index: number } {
+  const existing = tabs.findIndex((t) => t.kind === 'file' && t.path === path);
+  if (existing !== -1) return { tabs, index: existing };
+  const next: CanvasTab[] = [...tabs, { kind: 'file', path }];
+  return { tabs: next, index: next.length - 1 };
+}
+
+export function closeTabAt(
+  tabs: CanvasTab[],
+  activeIndex: number,
+  target: number,
+): { tabs: CanvasTab[]; activeIndex: number } {
+  const tab = tabs[target];
+  // The Design Files tab (index 0) is pinned — never closable.
+  if (!tab || tab.kind === 'files') return { tabs, activeIndex };
+  const next = tabs.filter((_, i) => i !== target);
+  let nextActive = activeIndex;
+  if (activeIndex === target) {
+    // Fall back to previous neighbor or tab 0 (Design Files).
+    nextActive = Math.max(0, target - 1);
+  } else if (activeIndex > target) {
+    nextActive = activeIndex - 1;
+  }
+  return { tabs: next, activeIndex: nextActive };
+}
+
 export interface UsageSnapshot {
   inputTokens: number;
   outputTokens: number;
@@ -138,6 +174,10 @@ interface CodesignState {
   commentBubble: CommentBubbleAnchor | null;
   /** Id of the snapshot currently visible in the preview — pins filter by it. */
   currentSnapshotId: string | null;
+
+  // Workstream G — canvas file tabs
+  canvasTabs: CanvasTab[];
+  activeCanvasTab: number;
 
   loadConfig: () => Promise<void>;
   completeOnboarding: (next: OnboardingState) => void;
@@ -219,6 +259,12 @@ interface CodesignState {
   }) => Promise<CommentRow | null>;
   updateComment: (id: string, patch: { text?: string }) => Promise<void>;
   removeComment: (id: string) => Promise<void>;
+
+  // Workstream G — canvas file tabs
+  openCanvasFileTab: (path: string) => void;
+  closeCanvasTab: (index: number) => void;
+  setActiveCanvasTab: (index: number) => void;
+  resetCanvasTabs: () => void;
 }
 
 export interface CommentBubbleAnchor {
@@ -704,6 +750,7 @@ function applyGenerateError(
   set: SetState,
   generationId: string,
   err: unknown,
+  designIdAtStart: string | null,
 ): void {
   const msg = err instanceof Error ? err.message : tr('errors.unknown');
   if (get().activeGenerationId !== generationId) return;
@@ -716,7 +763,7 @@ function applyGenerateError(
     lastError: msg,
     generationStage: 'error' as GenerationStage,
   }));
-  const designId = get().currentDesignId;
+  const designId = designIdAtStart ?? get().currentDesignId;
   if (designId) {
     void get().appendChatMessage({
       designId,
@@ -870,6 +917,9 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
   commentsLoaded: false,
   commentBubble: null,
   currentSnapshotId: null,
+
+  canvasTabs: [FILES_TAB],
+  activeCanvasTab: 0,
 
   clearIframeErrors() {
     set({ iframeErrors: [] });
@@ -1084,7 +1134,7 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
         }
       }
     } catch (err) {
-      applyGenerateError(get, set, generationId, err);
+      applyGenerateError(get, set, generationId, err, designIdAtStart);
     }
   },
 
@@ -1780,6 +1830,31 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
         description: msg,
       });
     }
+  },
+
+  openCanvasFileTab(path: string) {
+    set((s) => {
+      const result = openFileTab(s.canvasTabs, path);
+      return { canvasTabs: result.tabs, activeCanvasTab: result.index };
+    });
+  },
+
+  closeCanvasTab(index: number) {
+    set((s) => {
+      const result = closeTabAt(s.canvasTabs, s.activeCanvasTab, index);
+      return { canvasTabs: result.tabs, activeCanvasTab: result.activeIndex };
+    });
+  },
+
+  setActiveCanvasTab(index: number) {
+    set((s) => {
+      if (index < 0 || index >= s.canvasTabs.length) return {};
+      return { activeCanvasTab: index };
+    });
+  },
+
+  resetCanvasTabs() {
+    set({ canvasTabs: [FILES_TAB], activeCanvasTab: 0 });
   },
 }));
 

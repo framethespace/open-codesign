@@ -1,7 +1,15 @@
 import { useT } from '@open-codesign/i18n';
 import { IconButton, Tooltip } from '@open-codesign/ui';
 import { ArrowUp, Square } from 'lucide-react';
-import { type FormEvent, type KeyboardEvent, useEffect, useRef } from 'react';
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+} from 'react';
 
 const MAX_TEXTAREA_ROWS = 6;
 
@@ -29,6 +37,12 @@ export interface PromptInputProps {
   onSubmit: () => void;
   onCancel: () => void;
   isGenerating: boolean;
+  /** Optional element rendered inside the textarea container, bottom-left. */
+  leadingAction?: ReactNode;
+}
+
+export interface PromptInputHandle {
+  focus: () => void;
 }
 
 /**
@@ -40,19 +54,22 @@ export interface PromptInputProps {
  *   Meta/Ctrl+Enter — submit (power-user muscle memory)
  *   Shift+Enter     — newline
  */
-export function PromptInput({
-  prompt,
-  setPrompt,
-  onSubmit,
-  onCancel,
-  isGenerating,
-}: PromptInputProps) {
+export const PromptInput = forwardRef<PromptInputHandle, PromptInputProps>(function PromptInput(
+  { prompt, setPrompt, onSubmit, onCancel, isGenerating, leadingAction },
+  ref,
+) {
   const t = useT();
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (taRef.current) resizeTextarea(taRef.current);
   }, []);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      taRef.current?.focus();
+    },
+  }));
 
   function handleSubmit(e: FormEvent): void {
     e.preventDefault();
@@ -77,7 +94,7 @@ export function PromptInput({
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="relative rounded-[var(--radius-lg)] bg-[var(--color-surface)] border border-[var(--color-border)] focus-within:border-[var(--color-accent)] focus-within:shadow-[0_0_0_3px_var(--color-focus-ring)] transition-[box-shadow,border-color] duration-[var(--duration-faster)] ease-[var(--ease-out)]">
+      <div className="relative rounded-[var(--radius-lg)] bg-[var(--color-surface)] border border-[var(--color-border)] focus-within:border-[var(--color-accent)] transition-colors duration-[var(--duration-faster)] ease-[var(--ease-out)]">
         <textarea
           ref={taRef}
           value={prompt}
@@ -89,10 +106,16 @@ export function PromptInput({
           placeholder={t('chat.placeholderRich')}
           disabled={isGenerating}
           rows={1}
-          className="block w-full resize-none bg-transparent px-[var(--space-3)] pt-[var(--space-3)] pb-[calc(var(--space-6)+var(--space-4))] text-[var(--text-sm)] leading-[var(--leading-body)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none min-h-[var(--space-6)] overflow-y-auto"
+          className="block w-full resize-none bg-transparent px-[var(--space-3)] pt-[var(--space-3)] pb-[calc(var(--space-6)+var(--space-4))] text-[14px] leading-relaxed text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none min-h-[var(--space-6)] overflow-y-auto"
         />
 
-        <div className="absolute bottom-[var(--space-2)] right-[var(--space-2)]">
+        {leadingAction ? (
+          <div className="absolute bottom-[var(--space-1_5)] left-[var(--space-1_5)]">
+            {leadingAction}
+          </div>
+        ) : null}
+
+        <div className="absolute bottom-[var(--space-1_5)] right-[var(--space-1_5)]">
           {isGenerating ? (
             <IconButton
               size="sm"
@@ -126,4 +149,4 @@ export function PromptInput({
       </div>
     </form>
   );
-}
+});

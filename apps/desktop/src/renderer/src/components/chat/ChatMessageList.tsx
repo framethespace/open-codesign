@@ -1,6 +1,7 @@
 import { useT } from '@open-codesign/i18n';
 import type { ChatMessageRow, ChatToolCallPayload } from '@open-codesign/shared';
 import { FileText } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import { AssistantText } from './AssistantText';
 import { ToolCard, type ToolCardStatus, type ToolCardVariant } from './ToolCard';
 import { UserMessage } from './UserMessage';
@@ -8,6 +9,7 @@ import { UserMessage } from './UserMessage';
 interface ChatMessageListProps {
   messages: ChatMessageRow[];
   loading: boolean;
+  isGenerating?: boolean;
   empty?: React.ReactNode;
 }
 
@@ -51,8 +53,28 @@ interface Bucket {
  * is 'running' → card renders 'running', if any is 'error' → 'error',
  * otherwise 'done'.
  */
-export function ChatMessageList({ messages, loading, empty }: ChatMessageListProps) {
+export function ChatMessageList({ messages, loading, isGenerating, empty }: ChatMessageListProps) {
   const t = useT();
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
+
+  useEffect(() => {
+    const el = scrollRef.current?.parentElement;
+    if (!el) return;
+    function onScroll(): void {
+      if (!el) return;
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      stickToBottomRef.current = distanceFromBottom < 48;
+    }
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (!stickToBottomRef.current) return;
+    bottomRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages.length]);
 
   if (loading && messages.length === 0) {
     return (
@@ -136,9 +158,11 @@ export function ChatMessageList({ messages, loading, empty }: ChatMessageListPro
       });
     } else if (msg.kind === 'assistant_text') {
       const p = msg.payload as { text?: string };
+      const isLast = msg === messages[messages.length - 1];
+      const streaming = Boolean(isGenerating) && isLast;
       items.push({
         key: `a-${msg.seq}`,
-        node: <AssistantText text={p?.text ?? ''} />,
+        node: <AssistantText text={p?.text ?? ''} streaming={streaming} />,
       });
     } else if (msg.kind === 'artifact_delivered') {
       const p = msg.payload as { filename?: string; createdAt?: string };
@@ -165,7 +189,7 @@ export function ChatMessageList({ messages, loading, empty }: ChatMessageListPro
       items.push({
         key: `err-${msg.seq}`,
         node: (
-          <div className="rounded-[var(--radius-md)] border border-[var(--color-danger,_#c53030)] bg-[var(--color-surface)] px-[var(--space-3)] py-[var(--space-2)] text-[var(--text-xs)] text-[var(--color-text-primary)] break-all whitespace-pre-wrap">
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-error)] bg-[var(--color-surface)] px-[var(--space-3)] py-[var(--space-2)] text-[12.5px] font-[var(--font-mono),ui-monospace,Menlo,monospace] text-[var(--color-text-primary)] break-all whitespace-pre-wrap">
             {p?.message ?? t('errors.unknown')}
           </div>
         ),
@@ -176,10 +200,11 @@ export function ChatMessageList({ messages, loading, empty }: ChatMessageListPro
   flush();
 
   return (
-    <div className="space-y-[var(--space-4)]">
+    <div ref={scrollRef} className="space-y-[var(--space-5)]">
       {items.map((item) => (
         <div key={item.key}>{item.node}</div>
       ))}
+      <div ref={bottomRef} />
     </div>
   );
 }

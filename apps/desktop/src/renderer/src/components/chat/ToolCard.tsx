@@ -1,5 +1,5 @@
 import { useT } from '@open-codesign/i18n';
-import { ChevronDown, ListChecks, Zap } from 'lucide-react';
+import { ChevronRight, ListChecks, Zap } from 'lucide-react';
 import { useState } from 'react';
 
 export type ToolCardVariant = 'writing' | 'editing' | 'reading' | 'skill' | 'todos' | 'done';
@@ -45,8 +45,10 @@ export function ToolCard({ variant, status, title, bullets, todos }: ToolCardPro
 
   return (
     <div
-      className={`rounded-[var(--radius-md)] border border-[var(--color-border-muted)] bg-[var(--color-surface)] p-[var(--space-3)] ${
-        status === 'error' ? 'border-[var(--color-danger,_#c53030)]' : ''
+      className={`rounded-[var(--radius-md)] border bg-[var(--color-surface-elevated)] p-[var(--space-3)] transition-colors ${
+        status === 'error'
+          ? 'border-[var(--color-error)]'
+          : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)]'
       }`}
     >
       <button
@@ -55,21 +57,19 @@ export function ToolCard({ variant, status, title, bullets, todos }: ToolCardPro
         aria-expanded={expanded}
         className="flex w-full items-center gap-[var(--space-2)] text-left"
       >
-        <Icon className="w-[14px] h-[14px] text-[var(--color-text-secondary)] shrink-0" />
+        <Icon
+          className={`w-[14px] h-[14px] text-[var(--color-text-secondary)] shrink-0 ${
+            status === 'running' ? 'animate-pulse' : ''
+          }`}
+        />
         <span className="text-[13px] font-medium text-[var(--color-text-primary)]">
           {title}
           {showDoneSuffix ? `, ${t('sidebar.chat.tool.done')}` : ''}
           {progress ? ` ${progress}` : ''}
         </span>
-        {status === 'running' ? (
-          <span
-            className="ml-[var(--space-1)] inline-block h-[6px] w-[6px] animate-pulse rounded-full bg-[var(--color-accent)]"
-            aria-hidden
-          />
-        ) : null}
-        <ChevronDown
+        <ChevronRight
           className={`ml-auto w-[14px] h-[14px] text-[var(--color-text-muted)] transition-transform duration-[var(--duration-faster)] ${
-            expanded ? 'rotate-180' : ''
+            expanded ? 'rotate-90' : ''
           }`}
           aria-hidden
         />
@@ -104,7 +104,7 @@ export function ToolCard({ variant, status, title, bullets, todos }: ToolCardPro
             ? bullets.map((b, i) => (
                 <div
                   key={`${i}-${b.slice(0, 12)}`}
-                  className="text-[12.5px] font-[ui-monospace,Menlo,monospace] text-[var(--color-text-secondary)] truncate"
+                  className="text-[12.5px] font-[var(--font-mono),ui-monospace,Menlo,monospace] text-[var(--color-text-secondary)] truncate"
                   title={b}
                 >
                   • {b}

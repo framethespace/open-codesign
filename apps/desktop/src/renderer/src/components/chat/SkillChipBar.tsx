@@ -1,4 +1,5 @@
 import { useT } from '@open-codesign/i18n';
+import { Star } from 'lucide-react';
 import { BUILTIN_SKILLS, type BuiltinSkillId } from '../../store';
 
 interface SkillChipBarProps {
@@ -31,13 +32,18 @@ export function SkillChipBar({ attached, onToggle, disabled }: SkillChipBarProps
             disabled={disabled}
             aria-pressed={active}
             onClick={() => onToggle(skill)}
-            className={`inline-flex items-center rounded-full px-[var(--space-2_5)] py-[var(--space-0_5)] text-[var(--text-xs)] border transition-colors duration-[var(--duration-faster)] ${
+            className={`inline-flex items-center gap-[var(--space-1)] rounded-full px-[var(--space-2_5)] py-[var(--space-1)] text-[12px] border transition-colors duration-[var(--duration-faster)] ${
               active
-                ? 'bg-[var(--color-accent)] text-[var(--color-on-accent)] border-[var(--color-accent)]'
-                : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]'
+                ? 'border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-accent-soft)]'
+                : 'border-[var(--color-border)] text-[var(--color-text-secondary)] bg-transparent hover:text-[var(--color-text-primary)] hover:border-[var(--color-border-strong)]'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
-            ⭐ {t(`sidebar.chat.skill.${skill}`, { defaultValue: skill })}
+            <Star
+              className={`w-3 h-3 ${active ? 'fill-current' : ''}`}
+              strokeWidth={active ? 0 : 2}
+              aria-hidden
+            />
+            <span>{t(`sidebar.chat.skill.${skill}`, { defaultValue: skill })}</span>
           </button>
         );
       })}
