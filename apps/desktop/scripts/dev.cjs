@@ -8,7 +8,7 @@ const env = { ...process.env };
 
 // Some hosts, including automation agents, run Electron tooling with this set
 // so Electron behaves like Node. The desktop dev app must launch real Electron.
-delete env.ELECTRON_RUN_AS_NODE;
+env.ELECTRON_RUN_AS_NODE = undefined;
 
 const child = spawn(process.execPath, [electronViteBin, 'dev', ...process.argv.slice(2)], {
   env,

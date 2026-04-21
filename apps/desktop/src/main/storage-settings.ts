@@ -161,7 +161,10 @@ function parseStorageSettingsFile(raw: string): StorageLocations {
     );
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new CodesignError('storage-settings.json must contain an object', 'STORAGE_SETTINGS_INVALID');
+    throw new CodesignError(
+      'storage-settings.json must contain an object',
+      'STORAGE_SETTINGS_INVALID',
+    );
   }
   return sanitizeStorageLocations(parsed as Record<string, unknown>);
 }

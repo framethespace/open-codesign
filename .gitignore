@@ -66,3 +66,4 @@ docs/
 
 # Agent worktrees / transcripts
 .claude/projects/
+.codex-temp/

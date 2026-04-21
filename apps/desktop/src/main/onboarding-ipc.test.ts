@@ -300,6 +300,6 @@ describe('config:v1:import-codex-config empty env handling', () => {
     expect(encryptSecret).not.toHaveBeenCalled();
     const written = vi.mocked(writeConfig).mock.calls.at(-1)?.[0];
     expect(written?.secrets['codex-empty-env']).toBeUndefined();
-    delete process.env['OPEN_CODESIGN_EMPTY_ENV_FOR_TEST'];
+    process.env['OPEN_CODESIGN_EMPTY_ENV_FOR_TEST'] = undefined;
   });
 });

@@ -72,8 +72,6 @@ describe('buildAppPaths', () => {
 
     expect(next).toEqual({ dataDir });
     await expect(readPersistedStorageLocations(root)).resolves.toEqual({ dataDir });
-    await expect(readFile(storageSettingsPath(root), 'utf8')).resolves.toContain(
-      '"dataDir":',
-    );
+    await expect(readFile(storageSettingsPath(root), 'utf8')).resolves.toContain('"dataDir":');
   });
 });
