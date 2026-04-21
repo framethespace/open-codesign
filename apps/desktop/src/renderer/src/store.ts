@@ -294,7 +294,22 @@ interface CodesignState {
     scope?: CommentScope;
     parentOuterHTML?: string;
   }) => Promise<CommentRow | null>;
-  updateComment: (id: string, patch: { text?: string }) => Promise<void>;
+  updateComment: (id: string, patch: { text?: string }) => Promise<CommentRow | null>;
+  /** Single entry point used by CommentBubble. If `existingCommentId` is set,
+   *  routes to updateComment (editing a saved comment); otherwise addComment
+   *  (creating a new one). Returns the resulting row on success, null on
+   *  failure — callers must check before closing UI so drafts aren't lost. */
+  submitComment: (input: {
+    existingCommentId?: string;
+    kind: CommentKind;
+    selector: string;
+    tag: string;
+    outerHTML: string;
+    rect: CommentRect;
+    text: string;
+    scope?: CommentScope;
+    parentOuterHTML?: string;
+  }) => Promise<CommentRow | null>;
   removeComment: (id: string) => Promise<void>;
   /** Replace the live rects map — called from PreviewPane when the sandbox
    *  broadcasts an ELEMENT_RECTS message. Entries are iframe-viewport-relative
@@ -2073,13 +2088,14 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
   },
 
   async updateComment(id, patch) {
-    if (!window.codesign) return;
+    if (!window.codesign) return null;
     try {
       const updated = await window.codesign.comments.update(id, patch);
-      if (!updated) return;
+      if (!updated) return null;
       set((s) => ({
         comments: s.comments.map((c) => (c.id === id ? updated : c)),
       }));
+      return updated;
     } catch (err) {
       const msg = err instanceof Error ? err.message : tr('errors.unknown');
       get().pushToast({
@@ -2087,7 +2103,29 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
         title: tr('notifications.commentUpdateFailed'),
         description: msg,
       });
+      return null;
     }
+  },
+
+  async submitComment(input) {
+    // Route by presence of existingCommentId. The anchor on a reopened chip
+    // carries the id, so editing text hits updateComment (no duplicate row);
+    // a fresh click in comment mode falls through to addComment. Both return
+    // the row on success so the bubble can decide whether to close.
+    if (input.existingCommentId) {
+      return get().updateComment(input.existingCommentId, { text: input.text });
+    }
+    const payload: Parameters<CodesignState['addComment']>[0] = {
+      kind: input.kind,
+      selector: input.selector,
+      tag: input.tag,
+      outerHTML: input.outerHTML,
+      rect: input.rect,
+      text: input.text,
+    };
+    if (input.scope) payload.scope = input.scope;
+    if (input.parentOuterHTML) payload.parentOuterHTML = input.parentOuterHTML;
+    return get().addComment(payload);
   },
 
   async removeComment(id) {

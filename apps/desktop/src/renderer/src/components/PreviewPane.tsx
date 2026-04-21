@@ -296,7 +296,7 @@ export function PreviewPane({ onPickStarter }: PreviewPaneProps) {
   const commentBubble = useCodesignStore((s) => s.commentBubble);
   const openCommentBubble = useCodesignStore((s) => s.openCommentBubble);
   const closeCommentBubble = useCodesignStore((s) => s.closeCommentBubble);
-  const addComment = useCodesignStore((s) => s.addComment);
+  const submitComment = useCodesignStore((s) => s.submitComment);
   const applyLiveRects = useCodesignStore((s) => s.applyLiveRects);
   const clearLiveRects = useCodesignStore((s) => s.clearLiveRects);
   const liveRects = useCodesignStore((s) => s.liveRects);
@@ -305,6 +305,11 @@ export function PreviewPane({ onPickStarter }: PreviewPaneProps) {
   // window.message guard. We re-point this whenever the active design changes
   // or the active iframe element re-mounts.
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  // Unsent bubble drafts, keyed by bubbleKey (edit:<id> | new:<selector>).
+  // Lives across bubble remounts so switching to another chip / element and
+  // coming back restores the text the user had typed. Cleared on successful
+  // submit; explicit close (Esc / ×) deliberately preserves.
+  const bubbleDraftsRef = useRef<Map<string, string>>(new Map());
   const iframesByDesign = useRef<Map<string, HTMLIFrameElement>>(new Map());
   // Bumped every time the active iframe fires onLoad — used to re-trigger
   // the WATCH_SELECTORS effect so we don't race past overlay installation
@@ -551,16 +556,28 @@ export function PreviewPane({ onPickStarter }: PreviewPaneProps) {
               const scaled = liveForBubble
                 ? scaleRectForZoom(liveForBubble, previewZoom)
                 : commentBubble.rect;
+              const existingId = commentBubble.existingCommentId;
+              // Keying by comment id (when editing) rather than selector alone
+              // means two comments on the same element each get their own draft
+              // state and don't stomp each other on reopen.
+              const bubbleKey = existingId ? `edit:${existingId}` : `new:${commentBubble.selector}`;
+              // Draft precedence: prior unsent draft for this anchor > DB text
+              // on a reopened chip > empty. This preserves mid-typing context
+              // when the user clicks another chip and comes back.
+              const stashed = bubbleDraftsRef.current.get(bubbleKey);
+              const initialText = stashed ?? commentBubble.initialText;
               return (
                 <CommentBubble
-                  key={commentBubble.selector}
+                  key={bubbleKey}
                   selector={commentBubble.selector}
                   tag={commentBubble.tag}
                   outerHTML={commentBubble.outerHTML}
                   rect={scaled}
-                  {...(commentBubble.initialText !== undefined
-                    ? { initialText: commentBubble.initialText }
-                    : {})}
+                  {...(initialText !== undefined ? { initialText } : {})}
+                  onDraftChange={(text) => {
+                    if (text.length === 0) bubbleDraftsRef.current.delete(bubbleKey);
+                    else bubbleDraftsRef.current.set(bubbleKey, text);
+                  }}
                   onClose={() => {
                     const win = iframeRef.current?.contentWindow;
                     if (win) {
@@ -573,7 +590,7 @@ export function PreviewPane({ onPickStarter }: PreviewPaneProps) {
                     closeCommentBubble();
                   }}
                   onSendToClaude={async (text: string) => {
-                    await addComment({
+                    const row = await submitComment({
                       kind: 'edit',
                       selector: commentBubble.selector,
                       tag: commentBubble.tag,
@@ -581,10 +598,18 @@ export function PreviewPane({ onPickStarter }: PreviewPaneProps) {
                       rect: commentBubble.rect,
                       text,
                       scope: 'element',
+                      ...(existingId ? { existingCommentId: existingId } : {}),
                       ...(commentBubble.parentOuterHTML
                         ? { parentOuterHTML: commentBubble.parentOuterHTML }
                         : {}),
                     });
+                    // On failure (no snapshot, IPC error, duplicate) keep the
+                    // bubble open so the user's draft survives. A toast has
+                    // already been surfaced by the store layer.
+                    if (!row) return;
+                    // Persisted — wipe the stashed draft so the next open
+                    // starts clean (a reopened chip re-reads from DB).
+                    bubbleDraftsRef.current.delete(bubbleKey);
                     const win = iframeRef.current?.contentWindow;
                     if (win) {
                       try {

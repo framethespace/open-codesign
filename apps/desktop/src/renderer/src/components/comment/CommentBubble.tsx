@@ -9,6 +9,10 @@ export interface CommentBubbleProps {
   outerHTML: string;
   rect: { top: number; left: number; width: number; height: number };
   initialText?: string;
+  /** Called on every keystroke so the host (PreviewPane) can persist an
+   *  unsent draft keyed by anchor id. Without this, switching to a different
+   *  chip / element silently discarded the current text. */
+  onDraftChange?: (text: string) => void;
   onClose: () => void;
   onSendToClaude: (text: string) => Promise<void> | void;
 }
@@ -30,6 +34,7 @@ export function CommentBubble({
   outerHTML,
   rect,
   initialText,
+  onDraftChange,
   onClose,
   onSendToClaude,
 }: CommentBubbleProps) {
@@ -45,19 +50,17 @@ export function CommentBubble({
   }, []);
 
   useEffect(() => {
+    // Esc + the × button are the only ways to close. The previous mousedown-
+    // outside handler silently discarded the user's draft whenever they
+    // clicked surrounding UI (toolbar, sidebar, preview) — the single most
+    // frustrating failure mode. Explicit close mirrors how chat / dialog UIs
+    // treat in-progress text.
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose();
     }
-    function onDocClick(e: MouseEvent) {
-      if (!rootRef.current) return;
-      if (e.target instanceof Node && rootRef.current.contains(e.target)) return;
-      onClose();
-    }
     document.addEventListener('keydown', onKey);
-    document.addEventListener('mousedown', onDocClick);
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.removeEventListener('mousedown', onDocClick);
     };
   }, [onClose]);
 
@@ -119,7 +122,9 @@ export function CommentBubble({
             ref={textareaRef}
             value={draft}
             onChange={(e) => {
-              setDraft(e.target.value);
+              const next = e.target.value;
+              setDraft(next);
+              onDraftChange?.(next);
               const el = e.currentTarget;
               el.style.height = 'auto';
               el.style.height = `${Math.min(el.scrollHeight, 120)}px`;

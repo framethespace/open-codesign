@@ -19,12 +19,31 @@ export function CommentChipBar() {
   const removeComment = useCodesignStore((s) => s.removeComment);
   const previewZoom = useCodesignStore((s) => s.previewZoom);
   const sendPrompt = useCodesignStore((s) => s.sendPrompt);
+  const pushToast = useCodesignStore((s) => s.pushToast);
+  const config = useCodesignStore((s) => s.config);
   const isGenerating = useCodesignStore(
     (s) => s.isGenerating && s.generatingDesignId === s.currentDesignId,
   );
 
   const pending = comments.filter((c) => c.kind === 'edit' && c.status === 'pending');
   if (pending.length === 0) return null;
+
+  const isReady =
+    config?.hasKey === true && config.provider !== null && config.modelPrimary !== null;
+
+  function handleApply(): void {
+    // sendPrompt silently early-returns on !isReady or during another run.
+    // The button disables during `isGenerating`, but onboarding-incomplete
+    // users would otherwise click Apply to no effect. Surface it explicitly.
+    if (!isReady) {
+      pushToast({
+        variant: 'error',
+        title: t('notifications.onboardingIncomplete'),
+      });
+      return;
+    }
+    void sendPrompt({ prompt: '' });
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-[var(--space-1_5)]">
@@ -77,7 +96,7 @@ export function CommentChipBar() {
       <button
         type="button"
         disabled={isGenerating}
-        onClick={() => void sendPrompt({ prompt: '' })}
+        onClick={handleApply}
         className="inline-flex items-center gap-[var(--space-1)] h-[24px] px-[var(--space-2_5)] rounded-full bg-[var(--color-accent)] text-[var(--color-on-accent)] text-[var(--text-2xs)] font-medium hover:bg-[var(--color-accent-hover)] active:scale-[var(--scale-press-down)] disabled:opacity-50 transition-[transform,background-color] duration-[var(--duration-faster)] shrink-0"
         aria-label={t('commentChip.applyAll')}
       >
