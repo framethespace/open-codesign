@@ -69,6 +69,9 @@ export type StoredDesignSystem = z.infer<typeof StoredDesignSystem>;
 
 // ── ProviderEntry (v3) ───────────────────────────────────────────────────────
 
+export const ReasoningLevelSchema = z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']);
+export type ReasoningLevel = z.infer<typeof ReasoningLevelSchema>;
+
 export const ProviderEntrySchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -80,6 +83,14 @@ export const ProviderEntrySchema = z.object({
   modelsHint: z.array(z.string()).optional(),
   httpHeaders: z.record(z.string(), z.string()).optional(),
   queryParams: z.record(z.string(), z.string()).optional(),
+  /**
+   * Per-provider reasoning effort override. When set, overrides the
+   * model-family default from `reasoningForModel` in core. Useful for
+   * proxies that gate reasoning tiers by plan (Claude Code consumer-tier
+   * accepts only 'medium') or for users who want to dial depth up/down
+   * per endpoint. The UI surfaces this as a "Reasoning depth" dropdown.
+   */
+  reasoningLevel: ReasoningLevelSchema.optional(),
 });
 export type ProviderEntry = z.infer<typeof ProviderEntrySchema>;
 

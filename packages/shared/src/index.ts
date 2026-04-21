@@ -225,6 +225,7 @@ export {
   ConfigV3Schema,
   PROVIDER_SHORTLIST,
   ProviderEntrySchema,
+  ReasoningLevelSchema,
   SUPPORTED_ONBOARDING_PROVIDERS,
   SecretRef,
   STORED_DESIGN_SYSTEM_SCHEMA_VERSION,
@@ -243,6 +244,7 @@ export type {
   OnboardingState,
   ProviderEntry,
   ProviderShortlist,
+  ReasoningLevel,
   SupportedOnboardingProvider,
   WireApi,
 } from './config';
