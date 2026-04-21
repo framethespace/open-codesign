@@ -174,6 +174,7 @@ async function runLogin(): Promise<CodexOAuthStatus> {
     logger.error('codex.oauth.login.fail', {
       message: err instanceof Error ? err.message : String(err),
     });
+    if (err instanceof CodesignError) throw err;
     throw new CodesignError(
       `Codex login failed: ${err instanceof Error ? err.message : String(err)}`,
       ERROR_CODES.PROVIDER_ERROR,
