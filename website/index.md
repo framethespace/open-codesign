@@ -2,12 +2,12 @@
 layout: home
 title: Open CoDesign
 titleTemplate: Open-Source AI Design Tool — BYOK, Local-First, Apache-2.0
-description: Open CoDesign is an open-source desktop AI design tool. Bring your own API key (Anthropic, OpenAI, Gemini, Ollama). Everything runs locally. The open-source alternative to Anthropic Claude Design.
+description: Open CoDesign is an open-source desktop AI design tool — a self-hosted alternative to Claude Design. Bring your own API key (Anthropic, OpenAI, Gemini, DeepSeek, Ollama). Everything runs locally. Apache-2.0.
 
 hero:
   name: Open CoDesign
   text: Design with intent.
-  tagline: An open-source desktop app for designing with AI. Bring your own model. Keep everything local. The open-source alternative to Anthropic Claude Design.
+  tagline: An open-source desktop AI design tool. Bring your own model, keep everything local — a self-hosted alternative to Claude Design, built for teams who can't afford subscription lock-in.
   image:
     src: /og.svg
     alt: Open CoDesign — prompt to prototype

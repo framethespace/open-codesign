@@ -7,10 +7,10 @@ const SITE_URL = `${SITE_ORIGIN}${SITE_BASE}`;
 const OG_IMAGE = `${SITE_URL}og.svg`;
 
 export default defineConfig({
-  title: 'Open CoDesign — Open-Source Claude Design Alternative',
-  titleTemplate: ':title — Open CoDesign (Open-Source Claude Design Alternative)',
+  title: 'Open CoDesign',
+  titleTemplate: ':title — Open CoDesign',
   description:
-    'Open CoDesign is the open-source Claude Design alternative — a self-hosted desktop AI design tool. Bring your own API key (Anthropic, OpenAI, Gemini, DeepSeek, Ollama). Everything runs locally. Apache-2.0.',
+    'Open-source desktop AI design tool — the self-hosted alternative to Claude Design. Multi-model BYOK (Anthropic, OpenAI, Gemini, DeepSeek, Ollama), local-first, Apache-2.0.',
   lang: 'en-US',
 
   base: SITE_BASE,
@@ -27,13 +27,13 @@ export default defineConfig({
     // Open Graph
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:site_name', content: 'Open CoDesign' }],
-    ['meta', { property: 'og:title', content: 'Open CoDesign — The Open-Source Claude Design Alternative' }],
+    ['meta', { property: 'og:title', content: 'Open CoDesign — Open-Source AI Design Tool' }],
     [
       'meta',
       {
         property: 'og:description',
         content:
-          'The open-source Claude Design alternative. Self-hosted desktop AI design app. Prompt to prototype, slide deck, or marketing asset. Multi-model BYOK, local-first, Apache-2.0.',
+          'Open-source desktop AI design tool. A self-hosted alternative to Claude Design. Prompt to prototype, slide deck, or marketing asset. Multi-model BYOK, local-first, Apache-2.0.',
       },
     ],
     ['meta', { property: 'og:image', content: OG_IMAGE }],
@@ -49,7 +49,7 @@ export default defineConfig({
       {
         name: 'twitter:description',
         content:
-          'The open-source alternative to Anthropic Claude Design. BYOK, local-first, Apache-2.0. Runs on your laptop.',
+          'Open-source desktop AI design tool. BYOK, local-first, Apache-2.0. Runs on your laptop.',
       },
     ],
     ['meta', { name: 'twitter:image', content: OG_IMAGE }],
@@ -59,7 +59,7 @@ export default defineConfig({
       {
         name: 'keywords',
         content:
-          'Claude Design alternative, open source AI design tool, BYOK design app, local-first design generator, Anthropic Claude Design open source, AI prototype generator, prompt to HTML, prompt to React component, open-codesign, multi-model design, BYOK Electron app, AI design tool, AI slide deck generator, AI landing page generator, local AI design tool, Claude Code config import',
+          'open source AI design tool, Claude Design alternative, BYOK design app, local-first design generator, AI prototype generator, prompt to HTML, prompt to React component, open-codesign, multi-model design, Electron design app',
       },
     ],
     ['meta', { name: 'robots', content: 'index,follow,max-image-preview:large' }],
@@ -242,9 +242,9 @@ export default defineConfig({
     zh: {
       label: '中文',
       lang: 'zh-CN',
-      title: 'open-codesign',
+      title: 'Open CoDesign',
       description:
-        '开源桌面 AI 设计工具——一句话生成交互原型、幻灯片与营销素材。多模型、自带密钥、本地优先。',
+        '开源桌面 AI 设计工具——Claude Design 的自托管替代方案。自带 API Key（Anthropic、OpenAI、Gemini、DeepSeek、Ollama），100% 本地运行，Apache-2.0。',
       themeConfig: {
         nav: [
           { text: '首页', link: '/zh/' },

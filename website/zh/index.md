@@ -2,12 +2,12 @@
 layout: home
 title: Open CoDesign
 titleTemplate: 开源 AI 设计工具 — 自带密钥，本地优先，Apache-2.0
-description: Open CoDesign 是一款开源桌面 AI 设计工具。自带 API Key（Anthropic、OpenAI、Gemini、Ollama），一切本地运行。Anthropic Claude Design 的开源替代方案。
+description: Open CoDesign 是一款开源桌面 AI 设计工具，Claude Design 的自托管替代方案。自带 API Key（Anthropic、OpenAI、Gemini、DeepSeek、Ollama），一切本地运行。Apache-2.0。
 
 hero:
   name: Open CoDesign
   text: 用心设计。
-  tagline: 一个开源的桌面 AI 设计工具。自带模型，本地优先。Anthropic Claude Design 的开源替代。
+  tagline: 开源桌面 AI 设计工具。自带模型、本地运行——Claude Design 的自托管替代方案，给无法接受订阅锁定的团队。
   image:
     src: /og.svg
     alt: Open CoDesign — 提示词到原型
