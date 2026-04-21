@@ -312,7 +312,7 @@ async function runModel(input: ModelRunInput): Promise<GenerateOutput> {
   log.info(`[${scope}] step=send_request`, ctx);
   const sendStart = Date.now();
   let result: GenerateResult;
-  let reasoning = reasoningForModel(input.model);
+  let reasoning = input.reasoningLevel ?? reasoningForModel(input.model, input.baseUrl);
   // Self-healing: if the upstream rejects on reasoning mismatch, flip the
   // knob once and retry. Handles new reasoning-mandatory models (and
   // not-supported models) without code changes.
@@ -531,16 +531,26 @@ const OPENROUTER_REASONING_MODEL_RE = new RegExp(
   'i',
 );
 
-export function reasoningForModel(model: ModelRef): ReasoningLevel | undefined {
-  // Whitelist by (provider, modelId) pair. Substring matches across providers
-  // are unsafe: an OpenRouter or Groq pass-through id like
-  // `anthropic/claude-4` or any third-party id containing "o1"/"r1" would
-  // otherwise silently enable reasoning on a model that does not support it.
-  // The whole point of this gate is to avoid silent fallbacks, so require
-  // both axes to match a first-party provider we trust.
+export function reasoningForModel(
+  model: ModelRef,
+  baseUrl?: string | undefined,
+): ReasoningLevel | undefined {
+  // Proxy detection: when the provider id is 'anthropic' but baseUrl points
+  // somewhere other than api.anthropic.com, we're talking to a Claude Code-
+  // style proxy. Those commonly gate reasoning by plan and consumer-tier
+  // accepts only 'medium'. Cap defaults at 'medium' so requests don't 400
+  // out of the gate; users on higher-tier proxies override via Settings →
+  // Reasoning depth.
+  const looksLikeAnthropicProxy =
+    model.provider === 'anthropic' &&
+    baseUrl !== undefined &&
+    baseUrl.length > 0 &&
+    !/(^|\/\/)api\.anthropic\.com($|[/:])/i.test(baseUrl);
+
   switch (model.provider) {
     case 'anthropic':
-      return CLAUDE_4_MODEL_RE.test(model.modelId) ? 'high' : undefined;
+      if (!CLAUDE_4_MODEL_RE.test(model.modelId)) return undefined;
+      return looksLikeAnthropicProxy ? 'medium' : 'high';
     case 'openai':
       return OPENAI_REASONING_MODEL_RE.test(model.modelId) ? 'high' : undefined;
     case 'openrouter':
@@ -549,11 +559,12 @@ export function reasoningForModel(model: ModelRef): ReasoningLevel | undefined {
       // — pi-ai may translate the knob differently across upstreams, and
       // 'medium' is a safer landing zone for unknown reasoning back-ends.
       return OPENROUTER_REASONING_MODEL_RE.test(model.modelId) ? 'medium' : undefined;
+    case 'claude-code-imported':
+      // Claude Code proxy endpoints gate reasoning tiers by plan — the
+      // consumer-tier endpoint only accepts "medium". Sending "high" (or
+      // letting pi-agent-core default up) yields a 400.
+      return CLAUDE_4_MODEL_RE.test(model.modelId) ? 'medium' : undefined;
     default:
-      // groq, cerebras, xai, mistral, bedrock, azure, vercel-ai-gateway:
-      // all pass-through or multi-tenant. Even if they serve a reasoning model,
-      // we cannot trust the model id alone, and pi-ai will silently drop or
-      // mistranslate the reasoning knob. Stay conservative.
       return undefined;
   }
 }

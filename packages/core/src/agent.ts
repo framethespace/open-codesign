@@ -716,7 +716,8 @@ export async function generateViaAgent(
   // precedence, then the model-family default from reasoningForModel. If
   // neither yields a value the agent runs with 'off', matching
   // pi-agent-core's default.
-  const thinkingLevel = input.reasoningLevel ?? reasoningForModel(input.model) ?? 'off';
+  const thinkingLevel =
+    input.reasoningLevel ?? reasoningForModel(input.model, input.baseUrl) ?? 'off';
 
   // Build the Agent. convertToLlm narrows AgentMessage (may include custom
   // types) to the LLM-visible Message subset.

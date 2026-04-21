@@ -332,10 +332,11 @@ interface ActiveProviderCredentials {
   httpHeaders?: Record<string, string>;
 }
 
-function resolveActiveCredentials(): ActiveProviderCredentials | ConnectionTestError {
+function resolveCredentialsForProvider(
+  providerId: string,
+): ActiveProviderCredentials | ConnectionTestError {
   const cfg = getCachedConfig();
-  const active = cfg?.activeProvider;
-  if (cfg === null || active === undefined || active.length === 0) {
+  if (cfg === null || providerId.length === 0) {
     return {
       ok: false,
       code: 'IPC_BAD_INPUT',
@@ -344,30 +345,69 @@ function resolveActiveCredentials(): ActiveProviderCredentials | ConnectionTestE
     };
   }
   const entry =
-    cfg.providers[active] ??
-    (isSupportedOnboardingProvider(active) ? BUILTIN_PROVIDERS[active] : undefined);
+    cfg.providers[providerId] ??
+    (isSupportedOnboardingProvider(providerId) ? BUILTIN_PROVIDERS[providerId] : undefined);
   if (entry === undefined) {
     return {
       ok: false,
       code: 'IPC_BAD_INPUT',
-      message: `Provider "${active}" not found in config`,
+      message: `Provider "${providerId}" not found in config`,
       hint: 'Re-add the provider from Settings',
     };
   }
   let apiKey: string;
   try {
-    apiKey = getApiKeyForProvider(active);
+    apiKey = getApiKeyForProvider(providerId);
   } catch {
     // No stored key — provider may be keyless (IP-whitelisted proxy).
     apiKey = '';
   }
   return {
-    provider: active,
+    provider: providerId,
     wire: entry.wire,
     apiKey,
     baseUrl: entry.baseUrl,
     ...(entry.httpHeaders !== undefined ? { httpHeaders: entry.httpHeaders } : {}),
   };
+}
+
+function resolveActiveCredentials(): ActiveProviderCredentials | ConnectionTestError {
+  const cfg = getCachedConfig();
+  const active = cfg?.activeProvider;
+  if (active === undefined || active.length === 0) {
+    return {
+      ok: false,
+      code: 'IPC_BAD_INPUT',
+      message: 'No active provider configured',
+      hint: 'Complete onboarding first',
+    };
+  }
+  return resolveCredentialsForProvider(active);
+}
+
+async function runProviderTest(
+  creds: ActiveProviderCredentials,
+): Promise<ConnectionTestResponse> {
+  const { url } = buildEndpointForWire(creds.wire, creds.baseUrl);
+  const headers = buildAuthHeadersForWire(creds.wire, creds.apiKey, creds.httpHeaders);
+
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(url, { method: 'GET', headers });
+  } catch (err) {
+    const { code, hint } = classifyNetworkError(err);
+    return {
+      ok: false,
+      code,
+      message: err instanceof Error ? err.message : 'Network request failed',
+      hint,
+    };
+  }
+  if (!res.ok) {
+    const { code, hint } = classifyHttpError(res.status);
+    return { ok: false, code, message: `HTTP ${res.status}`, hint };
+  }
+  return { ok: true };
 }
 
 export function registerConnectionIpc(): void {
@@ -494,29 +534,27 @@ export function registerConnectionIpc(): void {
   ipcMain.handle('connection:v1:test-active', async (): Promise<ConnectionTestResponse> => {
     const creds = resolveActiveCredentials();
     if (!('provider' in creds)) return creds;
-
-    const { url } = buildEndpointForWire(creds.wire, creds.baseUrl);
-    const headers = buildAuthHeadersForWire(creds.wire, creds.apiKey, creds.httpHeaders);
-
-    let res: Response;
-    try {
-      res = await fetchWithTimeout(url, { method: 'GET', headers });
-    } catch (err) {
-      const { code, hint } = classifyNetworkError(err);
-      return {
-        ok: false,
-        code,
-        message: err instanceof Error ? err.message : 'Network request failed',
-        hint,
-      };
-    }
-
-    if (!res.ok) {
-      const { code, hint } = classifyHttpError(res.status);
-      return { ok: false, code, message: `HTTP ${res.status}`, hint };
-    }
-    return { ok: true };
+    return runProviderTest(creds);
   });
+
+  // Tests a specific provider by id — used by the per-row "Test connection"
+  // button in Settings. Same probe as test-active but routed by id.
+  ipcMain.handle(
+    'connection:v1:test-provider',
+    async (_e, raw: unknown): Promise<ConnectionTestResponse> => {
+      if (typeof raw !== 'string' || raw.length === 0) {
+        return {
+          ok: false,
+          code: 'IPC_BAD_INPUT',
+          message: 'test-provider expects a provider id string',
+          hint: 'Internal error — missing provider id',
+        };
+      }
+      const creds = resolveCredentialsForProvider(raw);
+      if (!('provider' in creds)) return creds;
+      return runProviderTest(creds);
+    },
+  );
 
   // Fetch available models for a stored provider by ID — credentials resolved
   // from the encrypted config so the renderer never touches plaintext keys.
