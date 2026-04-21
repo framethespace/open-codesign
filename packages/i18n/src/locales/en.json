@@ -286,7 +286,13 @@
       "resetButton": "Reset onboarding",
       "pathsLoadFailed": "Failed to load app paths",
       "openFolderFailed": "Could not open folder",
-      "onboardingResetToast": "Onboarding reset. Restart the app to re-run setup."
+      "onboardingResetToast": "Onboarding reset. Restart the app to re-run setup.",
+      "diagnosticsTitle": "Diagnostics",
+      "diagnosticsHint": "Open the log folder to inspect logs, or export a redacted bundle for bug reports.",
+      "openLogFolder": "Open log folder",
+      "exportDiagnostics": "Export diagnostics",
+      "diagnosticsExported": "Exported to {{path}}",
+      "diagnosticsExportFailed": "Could not export diagnostics"
     },
     "advanced": {
       "updateChannel": "Update channel",

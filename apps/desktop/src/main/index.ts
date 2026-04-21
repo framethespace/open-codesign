@@ -27,6 +27,7 @@ import type { AgentStreamEvent } from '../preload/index';
 import { registerChatMessagesIpc, registerChatMessagesUnavailableIpc } from './chat-messages-ipc';
 import { registerCommentsIpc, registerCommentsUnavailableIpc } from './comments-ipc';
 import { registerConnectionIpc } from './connection-ipc';
+import { registerDiagnosticsIpc } from './diagnostics-ipc';
 import { scanDesignSystem } from './design-system';
 import { makeRuntimeVerifier } from './done-verify';
 import { BrowserWindow, app, dialog, ipcMain, shell } from './electron-runtime';
@@ -834,6 +835,7 @@ void app.whenReady().then(async () => {
   registerOnboardingIpc();
   registerPreferencesIpc();
   registerExporterIpc(() => mainWindow);
+  registerDiagnosticsIpc();
   setupAutoUpdater();
   createWindow();
 

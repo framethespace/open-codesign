@@ -468,6 +468,21 @@ const api = {
         snapshotId,
       }) as Promise<CommentRow[]>,
   },
+  diagnostics: {
+    log: (entry: {
+      schemaVersion: 1;
+      level: 'info' | 'warn' | 'error';
+      scope: string;
+      message: string;
+      data?: Record<string, unknown>;
+      stack?: string;
+    }) => ipcRenderer.invoke('diagnostics:v1:log', entry) as Promise<void>,
+    openLogFolder: () => ipcRenderer.invoke('diagnostics:v1:openLogFolder') as Promise<void>,
+    exportDiagnostics: () =>
+      ipcRenderer.invoke('diagnostics:v1:exportDiagnostics') as Promise<string>,
+    showItemInFolder: (path: string) =>
+      ipcRenderer.invoke('diagnostics:v1:showItemInFolder', path) as Promise<void>,
+  },
 };
 
 contextBridge.exposeInMainWorld('codesign', api);
