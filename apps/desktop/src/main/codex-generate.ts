@@ -44,8 +44,8 @@ export interface CodexGenerateResult {
 }
 
 interface ResponsesInputItem {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+  role: 'user' | 'assistant';
+  content: Array<{ type: 'input_text' | 'output_text'; text: string }>;
 }
 
 function escapeUntrustedXml(text: string): string {
@@ -131,9 +131,13 @@ function buildInput(input: CodexGenerateInput): {
   const items: ResponsesInputItem[] = [];
   for (const h of input.history) {
     if (h.role === 'system') continue;
-    items.push({ role: h.role, content: h.content });
+    const partType = h.role === 'assistant' ? 'output_text' : 'input_text';
+    items.push({ role: h.role, content: [{ type: partType, text: h.content }] });
   }
-  items.push({ role: 'user', content: buildUserPrompt(input.prompt, sections) });
+  items.push({
+    role: 'user',
+    content: [{ type: 'input_text', text: buildUserPrompt(input.prompt, sections) }],
+  });
   return { instructions: CODEX_SYSTEM_PROMPT, items };
 }
 
