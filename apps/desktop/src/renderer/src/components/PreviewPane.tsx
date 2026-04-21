@@ -477,7 +477,7 @@ export function PreviewPane({ onPickStarter }: PreviewPaneProps) {
           </div>
         )}
         <CanvasErrorBar />
-        <div className="relative flex-1 overflow-auto">
+        <div className="relative flex-1 overflow-hidden">
           {body}
           {previewHtml ? <TweakPanel iframeRef={iframeRef} /> : null}
         </div>
