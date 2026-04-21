@@ -1,39 +1,68 @@
 import { CodesignError, type Config, ERROR_CODES, type SecretRef } from '@open-codesign/shared';
 import { safeStorage } from './electron-runtime';
+import { getLogger } from './logger';
 
-export function ensureKeychainAvailable(): void {
+/**
+ * Secret storage is now plaintext-in-config.toml (mode 0600), matching
+ * Claude Code / Codex / gh / aws / gcloud. safeStorage was removed because
+ * unsigned macOS builds triggered a system keychain password prompt on
+ * every decrypt — real UX tax for no real security gain (an attacker with
+ * filesystem access could read the plaintext ciphertext either way).
+ *
+ * The file name stays `keychain.ts` to minimise churn across importers;
+ * the module is now really a plaintext passthrough with one-shot legacy
+ * migration (safeStorage ciphertext → plaintext on first boot after
+ * upgrade).
+ */
+
+const log = getLogger('secret-store');
+
+/** Prefix that marks a new-format (plaintext) stored secret. */
+const PLAIN_PREFIX = 'plain:';
+
+export function encryptSecret(plaintext: string): string {
+  if (plaintext.length === 0) {
+    throw new CodesignError('Cannot store empty secret', ERROR_CODES.KEYCHAIN_EMPTY_INPUT);
+  }
+  return `${PLAIN_PREFIX}${plaintext}`;
+}
+
+export function decryptSecret(stored: string): string {
+  if (stored.length === 0) {
+    throw new CodesignError('Cannot read empty secret', ERROR_CODES.KEYCHAIN_EMPTY_INPUT);
+  }
+  if (stored.startsWith(PLAIN_PREFIX)) {
+    return stored.slice(PLAIN_PREFIX.length);
+  }
+  return decryptLegacy(stored);
+}
+
+/**
+ * Legacy safeStorage fallback. Invoked only for secrets written by older
+ * app versions that encrypted via Electron's `safeStorage`. On macOS this
+ * will prompt for the keychain password the FIRST time it's called (and
+ * only then — subsequent calls in the same process are served from
+ * safeStorage's in-process key cache). After `migrateSecrets` rewrites the
+ * config, this path is never hit again.
+ */
+function decryptLegacy(base64: string): string {
   if (!safeStorage.isEncryptionAvailable()) {
     throw new CodesignError(
-      'OS keychain (safeStorage) is not available. Cannot persist API keys securely.',
+      'A legacy encrypted API key was found but the OS keychain is unavailable. Please re-enter your API key in Settings.',
       ERROR_CODES.KEYCHAIN_UNAVAILABLE,
+    );
+  }
+  try {
+    return safeStorage.decryptString(Buffer.from(base64, 'base64'));
+  } catch (err) {
+    throw new CodesignError(
+      'Failed to decrypt a legacy API key. Please re-enter your API key in Settings.',
+      ERROR_CODES.KEYCHAIN_UNAVAILABLE,
+      { cause: err },
     );
   }
 }
 
-export function encryptSecret(plaintext: string): string {
-  ensureKeychainAvailable();
-  if (plaintext.length === 0) {
-    throw new CodesignError('Cannot encrypt empty secret', ERROR_CODES.KEYCHAIN_EMPTY_INPUT);
-  }
-  const buf = safeStorage.encryptString(plaintext);
-  return buf.toString('base64');
-}
-
-export function decryptSecret(ciphertextBase64: string): string {
-  ensureKeychainAvailable();
-  if (ciphertextBase64.length === 0) {
-    throw new CodesignError('Cannot decrypt empty ciphertext', ERROR_CODES.KEYCHAIN_EMPTY_INPUT);
-  }
-  const buf = Buffer.from(ciphertextBase64, 'base64');
-  return safeStorage.decryptString(buf);
-}
-
-/**
- * Derive a display-safe mask for a secret — e.g. "sk-ant-***xyz9". Stored
- * alongside the ciphertext so Settings can render the provider row without
- * invoking `safeStorage.decryptString` (which prompts for the keychain
- * password on unsigned macOS builds).
- */
 export function maskSecret(plaintext: string): string {
   if (plaintext.length <= 8) return '***';
   const prefix = plaintext.startsWith('sk-') ? 'sk-' : plaintext.slice(0, 4);
@@ -41,12 +70,6 @@ export function maskSecret(plaintext: string): string {
   return `${prefix}***${suffix}`;
 }
 
-/**
- * Convenience wrapper: encrypt a plaintext API key and return the full
- * `SecretRef` (ciphertext + mask) in one shot. Use this at every save site
- * so mask metadata is always written. Older configs missing `mask` are
- * migrated by `migrateSecretMasks` on first read.
- */
 export function buildSecretRef(plaintext: string): SecretRef {
   return {
     ciphertext: encryptSecret(plaintext),
@@ -55,58 +78,64 @@ export function buildSecretRef(plaintext: string): SecretRef {
 }
 
 /**
- * Non-throwing variant of `buildSecretRef` — returns `null` when safeStorage
- * is unavailable (unsigned macOS without keychain entitlements, Linux
- * without a secret-service daemon, etc.). Callers should skip persisting
- * the secret and surface a warning so the REST of the imported config
- * still lands; the user can re-add the key by hand once keychain is fixed.
- *
- * Only `KEYCHAIN_UNAVAILABLE` is caught — real unexpected errors still
- * propagate so they're not silently swallowed.
+ * Kept for call-site compat. The new plaintext store can't fail the way
+ * safeStorage used to (no keychain dependency), so this is really just an
+ * alias for `buildSecretRef`. Callers that previously got `null` should
+ * now always get a valid ref.
  */
 export function tryBuildSecretRef(plaintext: string): SecretRef | null {
   try {
     return buildSecretRef(plaintext);
-  } catch (err) {
-    if (err instanceof CodesignError && err.code === ERROR_CODES.KEYCHAIN_UNAVAILABLE) {
-      return null;
-    }
-    throw err;
+  } catch {
+    return null;
   }
 }
 
 /**
- * One-shot migration: for any secret missing the `mask` field, decrypt it
- * once and populate the mask. Designed to run on config load — after this
- * pass, `toProviderRows` never touches safeStorage again. Returns the
- * migrated config plus a flag indicating whether anything changed (so the
- * caller can decide whether to persist).
+ * One-shot migration run on boot:
+ *   1. Any secret stored in legacy safeStorage base64 format → decrypt
+ *      once (last keychain prompt ever) → rewrite as `plain:<apikey>`.
+ *   2. Any plaintext secret missing its display `mask` → fill it.
  *
- * Each decrypt-for-migration triggers exactly one keychain prompt per
- * provider on unsigned macOS builds — unavoidable since we have to read
- * the plaintext once to derive the mask. This is a one-time cost; all
- * future launches read masks directly from disk.
- *
- * Robust to partial failures: if a single provider fails to decrypt (e.g.
- * keychain revoked access mid-migration), we leave that row's mask
- * unset and carry on with the rest.
+ * Idempotent. Partial failures (a single row that can't be decrypted)
+ * leave that row untouched so the rest of the migration can land; the
+ * user can re-enter that key from Settings.
  */
-export function migrateSecretMasks(cfg: Config): { config: Config; changed: boolean } {
+export function migrateSecrets(cfg: Config): { config: Config; changed: boolean } {
   const secrets = cfg.secrets ?? {};
   const entries = Object.entries(secrets);
-  const needs = entries.filter(([, ref]) => ref.mask === undefined || ref.mask.length === 0);
-  if (needs.length === 0) return { config: cfg, changed: false };
+  if (entries.length === 0) return { config: cfg, changed: false };
 
   const nextSecrets: Record<string, SecretRef> = { ...secrets };
   let changed = false;
-  for (const [provider, ref] of needs) {
-    try {
-      const plain = decryptSecret(ref.ciphertext);
-      nextSecrets[provider] = { ...ref, mask: maskSecret(plain) };
-      changed = true;
-    } catch {
-      /* skip — row will retry on next boot or when user edits it */
+  for (const [provider, ref] of entries) {
+    const isLegacy = !ref.ciphertext.startsWith(PLAIN_PREFIX);
+    const needsMask = ref.mask === undefined || ref.mask.length === 0;
+    if (!isLegacy && !needsMask) continue;
+
+    let plaintext: string;
+    if (isLegacy) {
+      try {
+        plaintext = decryptLegacy(ref.ciphertext);
+      } catch (err) {
+        log.warn('secret.migration.decrypt_failed', {
+          provider,
+          err: err instanceof Error ? err.message : String(err),
+        });
+        continue;
+      }
+    } else {
+      plaintext = ref.ciphertext.slice(PLAIN_PREFIX.length);
     }
+
+    nextSecrets[provider] = {
+      ciphertext: `${PLAIN_PREFIX}${plaintext}`,
+      mask: maskSecret(plaintext),
+    };
+    changed = true;
   }
   return { config: { ...cfg, secrets: nextSecrets }, changed };
 }
+
+/** @deprecated Use `migrateSecrets`. Kept as alias for a few callers. */
+export const migrateSecretMasks = migrateSecrets;

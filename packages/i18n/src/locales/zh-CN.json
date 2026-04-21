@@ -328,7 +328,7 @@
     },
     "paste": {
       "title": "粘贴你的 API Key",
-      "description": "自动识别提供商。点击\"测试连通\"验证 Key 与端点后再继续。你的 Key 会使用系统钥匙串加密存储。",
+      "description": "自动识别提供商。点击\"测试连通\"验证 Key 与端点后再继续。你的 Key 仅保存在本机 ~/.config/open-codesign/config.toml（文件权限 0600）。",
       "placeholder": "sk-…",
       "recognized": "已识别提供商：{{provider}}",
       "connected_one": "已连接 {{count}} 个模型",

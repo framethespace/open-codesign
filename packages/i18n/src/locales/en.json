@@ -325,7 +325,7 @@
     },
     "paste": {
       "title": "Paste your API key",
-      "description": "Auto-detects your provider. Click Test to verify the key and endpoint before continuing. Your key is encrypted with the OS keychain.",
+      "description": "Auto-detects your provider. Click Test to verify the key and endpoint before continuing. Your key is stored locally in ~/.config/open-codesign/config.toml (file mode 0600).",
       "placeholder": "sk-…",
       "recognized": "Detected provider: {{provider}}",
       "connected_one": "Connected {{count}} model",

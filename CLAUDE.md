@@ -16,7 +16,7 @@ These are project-level commitments, not preferences:
 
 1. **Install size budget: ≤ 80 MB.** Adding a dependency that pushes us over requires PR justification with size diff and alternatives considered. CI enforces this.
 2. **No bundled model runtimes.** No Ollama, llama.cpp, Python, or browser binaries shipped in the installer. Use system installs or lazy-download on demand.
-3. **BYOK only.** No proxied API calls, no cloud account, no telemetry by default. User credentials stay in `~/.config/open-codesign/config.toml` (encrypted via Electron `safeStorage`).
+3. **BYOK only.** No proxied API calls, no cloud account, no telemetry by default. User credentials stay in `~/.config/open-codesign/config.toml` (plaintext, file mode 0600 — matching Claude Code / Codex / gh CLI conventions).
 4. **Local-first storage.** Designs, history, and codebase scans live on disk (SQLite via `better-sqlite3`). No mandatory cloud sync.
 5. **MIT-compatible permissive licenses only.** Reject GPL/AGPL/SSPL/proprietary deps. Check license before adding anything.
 6. **Lazy-load heavy features.** PPTX export, web capture, codebase scan, etc. must dynamic-import on first use, not on app start.

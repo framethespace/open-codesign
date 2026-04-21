@@ -68,17 +68,14 @@ vi.mock('./keychain', () => ({
     ciphertext: `enc:${s}`,
     mask: s.length > 8 ? `${s.slice(0, 4)}***${s.slice(-4)}` : '***',
   })),
+  migrateSecrets: vi.fn((cfg: { secrets?: Record<string, unknown> }) => ({
+    config: cfg,
+    changed: false,
+  })),
   migrateSecretMasks: vi.fn((cfg: { secrets?: Record<string, unknown> }) => ({
     config: cfg,
     changed: false,
   })),
-  ensureKeychainAvailable: vi.fn(() => {}),
-}));
-
-vi.mock('./keychain-ux', () => ({
-  prepareKeychain: vi.fn(async () => true),
-  maybeShowKeychainExplainer: vi.fn(async () => {}),
-  maybeShowKeychainUnavailableDialog: vi.fn(async () => {}),
 }));
 
 vi.mock('./storage-settings', () => ({

@@ -159,7 +159,7 @@ Open CoDesign 可以把一句自然语言提示词，直接变成一个完成度
 - Google Gemini
 - 任意 OpenAI 兼容中继，比如 OpenRouter、SiliconFlow、本地 Ollama
 
-凭证会保存在 `~/.config/open-codesign/config.toml`，并通过 Electron `safeStorage` 加密。除非你选择的模型提供商本身需要联网，请求内容不会额外离开你的机器。
+凭证会保存在 `~/.config/open-codesign/config.toml`（文件权限 0600，与 Claude Code、Codex、`gh` CLI 的做法一致）。除非你选择的模型提供商本身需要联网，请求内容不会额外离开你的机器。
 
 ### 3. 输入第一条提示词
 

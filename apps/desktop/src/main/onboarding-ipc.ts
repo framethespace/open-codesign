@@ -13,7 +13,6 @@ import {
   type SupportedOnboardingProvider,
   type WireApi,
   WireApiSchema,
-  detectWireFromBaseUrl,
   hydrateConfig,
   isSupportedOnboardingProvider,
 } from '@open-codesign/shared';
@@ -21,8 +20,7 @@ import { defaultConfigDir, readConfig, writeConfig } from './config';
 import { dialog, ipcMain, shell } from './electron-runtime';
 import { type ClaudeCodeImport, readClaudeCodeSettings } from './imports/claude-code-config';
 import { type CodexImport, readCodexConfig } from './imports/codex-config';
-import { buildSecretRef, decryptSecret, migrateSecretMasks, tryBuildSecretRef } from './keychain';
-import { prepareKeychain } from './keychain-ux';
+import { buildSecretRef, decryptSecret, migrateSecrets, tryBuildSecretRef } from './keychain';
 import { defaultLogsDir, getLogger } from './logger';
 import {
   type ProviderRow,
@@ -63,8 +61,28 @@ let cachedConfig: Config | null = null;
 let configLoaded = false;
 
 export async function loadConfigOnBoot(): Promise<void> {
-  cachedConfig = await readConfig();
+  const parsed = await readConfig();
   configLoaded = true;
+  if (parsed === null) {
+    cachedConfig = null;
+    return;
+  }
+  // Boot-time migration: rewrite any legacy safeStorage-encrypted secrets
+  // as plaintext, and fill in missing display masks. This is the ONLY path
+  // that can trigger a keychain prompt (and only on an upgrade from an
+  // older build that still used safeStorage). After one successful run the
+  // config is pure plaintext forever.
+  const migrated = migrateSecrets(parsed);
+  cachedConfig = migrated.config;
+  if (migrated.changed) {
+    try {
+      await writeConfig(migrated.config);
+    } catch (err) {
+      logger.warn('boot.migrate_secrets.writeConfig_failed', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 }
 
 export function getCachedConfig(): Config | null {
@@ -220,21 +238,12 @@ function parseValidateKey(raw: unknown): ValidateKeyInput {
 // ── Settings handler implementations (shared by v1 and legacy channels) ───────
 
 function runListProviders(): ProviderRow[] {
-  // Opportunistic migration: legacy configs stored ciphertext without a
-  // mask field, which forces `toProviderRows` to decrypt on every Settings
-  // open (→ keychain prompts on unsigned macOS). First time we see such a
-  // config, decrypt once per row and persist the masks. After this runs
-  // once, subsequent opens read masks straight off disk.
-  const current = getCachedConfig();
-  if (current !== null) {
-    const { config: migrated, changed } = migrateSecretMasks(current);
-    if (changed) {
-      cachedConfig = migrated;
-      void writeConfig(migrated);
-      return toProviderRows(migrated, decryptSecret);
-    }
-  }
-  return toProviderRows(current, decryptSecret);
+  // Secret migration happens once at boot (see `loadConfigOnBoot` →
+  // `migrateSecrets`). By the time Settings is opened, every row has a
+  // persisted plaintext + mask and `toProviderRows` never touches any
+  // decrypt path for render. `decryptSecret` is only passed in as a
+  // late-stage fallback for exotic rows that somehow slipped through.
+  return toProviderRows(getCachedConfig(), decryptSecret);
 }
 
 interface SetProviderAndModelsInput extends SaveKeyInput {
@@ -850,22 +859,6 @@ async function runListEndpointModels(raw: unknown): Promise<ListEndpointModelsRe
 }
 
 export function registerOnboardingIpc(): void {
-  // Gate for every handler that will touch safeStorage. Shows the first-run
-  // explainer dialog on the very first call, or the "keychain unavailable"
-  // dialog when encryption isn't available (e.g. app running from DMG).
-  // Returns false → handler should abort with a user-friendly error; the
-  // explainer dialog already told the user what to do next.
-  async function withKeychain<T>(op: () => Promise<T> | T): Promise<T> {
-    const ok = await prepareKeychain();
-    if (!ok) {
-      throw new CodesignError(
-        '系统钥匙串不可用——请按弹出的说明把 Open CoDesign 拖到「应用程序」文件夹后重启。',
-        ERROR_CODES.KEYCHAIN_UNAVAILABLE,
-      );
-    }
-    return op();
-  }
-
   ipcMain.handle('onboarding:get-state', (): OnboardingState => toState(getCachedConfig()));
 
   ipcMain.handle('onboarding:validate-key', async (_e, raw: unknown): Promise<ValidateResult> => {
@@ -877,7 +870,7 @@ export function registerOnboardingIpc(): void {
     // Onboarding always activates the provider it just saved — that's the
     // whole point of the first-time flow. Delegated to the canonical handler
     // so behavior matches Settings exactly.
-    return withKeychain(() => runSetProviderAndModels({ ...parseSaveKey(raw), setAsActive: true }));
+    return runSetProviderAndModels({ ...parseSaveKey(raw), setAsActive: true });
   });
 
   ipcMain.handle('onboarding:skip', async (): Promise<OnboardingState> => {
@@ -889,20 +882,20 @@ export function registerOnboardingIpc(): void {
   ipcMain.handle(
     'config:v1:set-provider-and-models',
     async (_e, raw: unknown): Promise<OnboardingState> => {
-      return withKeychain(() => runSetProviderAndModels(parseSetProviderAndModels(raw)));
+      return runSetProviderAndModels(parseSetProviderAndModels(raw));
     },
   );
 
   // ── v3 custom provider IPC surface ────────────────────────────────────────
 
   ipcMain.handle('config:v1:add-provider', async (_e, raw: unknown): Promise<OnboardingState> => {
-    return withKeychain(() => runAddCustomProvider(parseAddProviderPayload(raw)));
+    return runAddCustomProvider(parseAddProviderPayload(raw));
   });
 
   ipcMain.handle(
     'config:v1:update-provider',
     async (_e, raw: unknown): Promise<OnboardingState> => {
-      return withKeychain(() => runUpdateProvider(parseUpdateProviderPayload(raw)));
+      return runUpdateProvider(parseUpdateProviderPayload(raw));
     },
   );
 
@@ -953,7 +946,7 @@ export function registerOnboardingIpc(): void {
         ERROR_CODES.CONFIG_MISSING,
       );
     }
-    return withKeychain(() => runImportCodex(imported));
+    return runImportCodex(imported);
   });
 
   ipcMain.handle('config:v1:import-claude-code-config', async (): Promise<OnboardingState> => {
@@ -964,7 +957,7 @@ export function registerOnboardingIpc(): void {
         ERROR_CODES.CONFIG_MISSING,
       );
     }
-    return withKeychain(() => runImportClaudeCode(imported));
+    return runImportClaudeCode(imported);
   });
 
   ipcMain.handle('config:v1:list-endpoint-models', async (_e, raw: unknown) => {
@@ -975,12 +968,12 @@ export function registerOnboardingIpc(): void {
 
   ipcMain.handle(
     'settings:v1:list-providers',
-    async (): Promise<ProviderRow[]> => withKeychain(() => runListProviders()),
+    async (): Promise<ProviderRow[]> => runListProviders(),
   );
 
   ipcMain.handle(
     'settings:v1:add-provider',
-    async (_e, raw: unknown): Promise<ProviderRow[]> => withKeychain(() => runAddProvider(raw)),
+    async (_e, raw: unknown): Promise<ProviderRow[]> => runAddProvider(raw),
   );
 
   ipcMain.handle(
@@ -1015,12 +1008,12 @@ export function registerOnboardingIpc(): void {
 
   ipcMain.handle('settings:list-providers', async (): Promise<ProviderRow[]> => {
     logger.warn('legacy settings:list-providers channel used, schedule removal next minor');
-    return withKeychain(() => runListProviders());
+    return runListProviders();
   });
 
   ipcMain.handle('settings:add-provider', async (_e, raw: unknown): Promise<ProviderRow[]> => {
     logger.warn('legacy settings:add-provider channel used, schedule removal next minor');
-    return withKeychain(() => runAddProvider(raw));
+    return runAddProvider(raw);
   });
 
   ipcMain.handle('settings:delete-provider', async (_e, raw: unknown): Promise<ProviderRow[]> => {
