@@ -20,7 +20,9 @@ import {
   CodesignError,
   GeneratePayload,
   GeneratePayloadV1,
+  computeFingerprint,
 } from '@open-codesign/shared';
+import type BetterSqlite3 from 'better-sqlite3';
 import type { BrowserWindow as ElectronBrowserWindow } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import type { AgentStreamEvent } from '../preload/index';
@@ -51,7 +53,7 @@ import { readPersisted as readPreferences, registerPreferencesIpc } from './pref
 import { preparePromptContext } from './prompt-context';
 import { resolveActiveModel } from './provider-settings';
 import { withRun } from './runContext';
-import { safeInitSnapshotsDb } from './snapshots-db';
+import { pruneDiagnosticEvents, recordDiagnosticEvent, safeInitSnapshotsDb } from './snapshots-db';
 import { registerSnapshotsIpc, registerSnapshotsUnavailableIpc } from './snapshots-ipc';
 import { initStorageSettings } from './storage-settings';
 
@@ -140,8 +142,26 @@ function createWindow(): void {
   }
 }
 
-function registerIpcHandlers(): void {
+type Database = BetterSqlite3.Database;
+
+function registerIpcHandlers(db: Database | null): void {
   const logIpc = getLogger('main:ipc');
+
+  const recordFinalError = (scope: string, runId: string, err: unknown): void => {
+    if (db === null) return;
+    const code = err instanceof CodesignError ? (err.code as string) : 'PROVIDER_UPSTREAM_ERROR';
+    const stack = err instanceof Error ? err.stack : undefined;
+    recordDiagnosticEvent(db, {
+      level: 'error',
+      code,
+      scope,
+      runId,
+      fingerprint: computeFingerprint({ errorCode: code, stack }),
+      message: err instanceof Error ? err.message : String(err),
+      stack,
+      transient: false,
+    });
+  };
 
   if (USE_AGENT_RUNTIME) {
     logIpc.info('generate.runtime.agent_enabled', {
@@ -155,7 +175,30 @@ function registerIpcHandlers(): void {
    * log file without forcing `core` to depend on electron-log. */
   const coreLoggerFor = (id: string): CoreLogger => ({
     info: (event, data) => logIpc.info(event, { generationId: id, ...(data ?? {}) }),
-    warn: (event, data) => logIpc.warn(event, { generationId: id, ...(data ?? {}) }),
+    warn: (event, data) => {
+      logIpc.warn(event, { generationId: id, ...(data ?? {}) });
+      if ((event === 'provider.error' || event === 'provider.error.final') && db !== null) {
+        const transient = event === 'provider.error';
+        const code = 'PROVIDER_UPSTREAM_ERROR';
+        const upstream =
+          data !== undefined && typeof data['upstream_message'] === 'string'
+            ? (data['upstream_message'] as string)
+            : event;
+        recordDiagnosticEvent(db, {
+          level: 'warn',
+          code,
+          scope: 'provider',
+          runId: id,
+          fingerprint: computeFingerprint({
+            errorCode: code,
+            stack: JSON.stringify(data ?? {}),
+          }),
+          message: upstream,
+          stack: undefined,
+          transient,
+        });
+      }
+    },
     error: (event, data) => logIpc.error(event, { generationId: id, ...(data ?? {}) }),
   });
 
@@ -615,6 +658,7 @@ function registerIpcHandlers(): void {
           message: err instanceof Error ? err.message : String(err),
           code: err instanceof CodesignError ? err.code : undefined,
         });
+        recordFinalError('generate', id, err);
         throw err;
       } finally {
         clearTimeoutGuard();
@@ -724,6 +768,7 @@ function registerIpcHandlers(): void {
           message: err instanceof Error ? err.message : String(err),
           code: err instanceof CodesignError ? err.code : undefined,
         });
+        recordFinalError('generate', id, err);
         throw err;
       } finally {
         clearTimeoutGuard();
@@ -811,6 +856,7 @@ function registerIpcHandlers(): void {
           message: err instanceof Error ? err.message : String(err),
           code: err instanceof CodesignError ? err.code : undefined,
         });
+        recordFinalError('generate', runId, err);
         throw err;
       }
     });
@@ -864,6 +910,7 @@ function registerIpcHandlers(): void {
           message: err instanceof Error ? err.message : String(err),
           code: err instanceof CodesignError ? err.code : undefined,
         });
+        recordFinalError('generate', runId, err);
         throw err;
       }
     });
@@ -945,10 +992,18 @@ void app.whenReady().then(async () => {
   // from opening. Surface it via an error dialog and skip registering the
   // snapshots IPC channels; the rest of the app stays usable.
   const dbResult = safeInitSnapshotsDb(join(app.getPath('userData'), 'designs.db'));
+  const diagnosticsDb: Database | null = dbResult.ok ? dbResult.db : null;
   if (dbResult.ok) {
     registerSnapshotsIpc(dbResult.db);
     registerChatMessagesIpc(dbResult.db);
     registerCommentsIpc(dbResult.db);
+    try {
+      pruneDiagnosticEvents(dbResult.db, 500);
+    } catch (err) {
+      getLogger('main:boot').warn('diagnosticEvents.prune.fail', {
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
   } else {
     const bootLog = getLogger('main:boot');
     bootLog.error('snapshotsDb.init.fail', {
@@ -966,14 +1021,14 @@ void app.whenReady().then(async () => {
       `Could not open the local snapshots database. Version history will be disabled for this session.\n\n${dbResult.error.message}`,
     );
   }
-  registerIpcHandlers();
+  registerIpcHandlers(diagnosticsDb);
   registerLocaleIpc();
   registerConnectionIpc();
   registerOnboardingIpc();
   registerCodexOAuthIpc();
   registerPreferencesIpc();
   registerExporterIpc(() => mainWindow);
-  registerDiagnosticsIpc();
+  registerDiagnosticsIpc(diagnosticsDb);
   setupAutoUpdater();
   registerAppMenu();
   createWindow();

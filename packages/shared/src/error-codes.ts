@@ -82,6 +82,9 @@ export const ERROR_CODES = {
 
   // Misc / shell
   OPEN_PATH_FAILED: 'OPEN_PATH_FAILED',
+
+  // Diagnostic events (renderer-origin errors relayed to main)
+  RENDERER_ERROR: 'RENDERER_ERROR',
 } as const;
 
 /** Literal union of every known CodesignError code. */
@@ -307,6 +310,12 @@ export const ERROR_CODE_DESCRIPTIONS: Record<CodesignErrorCode, ErrorCodeDescrip
   // Misc / shell
   OPEN_PATH_FAILED: {
     userFacing: 'Could not open the requested folder or file.',
+    category: 'other',
+  },
+
+  // Diagnostic events
+  RENDERER_ERROR: {
+    userFacing: 'An error occurred in the renderer. Details are in the log.',
     category: 'other',
   },
 };

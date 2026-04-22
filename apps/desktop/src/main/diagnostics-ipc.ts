@@ -12,10 +12,14 @@
  */
 
 import { readFile } from 'node:fs/promises';
-import { CodesignError } from '@open-codesign/shared';
+import { CodesignError, computeFingerprint } from '@open-codesign/shared';
+import type BetterSqlite3 from 'better-sqlite3';
 import { configPath } from './config';
 import { app, ipcMain, shell } from './electron-runtime';
 import { getLogPath, getLogger, logsDir } from './logger';
+import { recordDiagnosticEvent } from './snapshots-db';
+
+type Database = BetterSqlite3.Database;
 
 const logger = getLogger('diagnostics-ipc');
 
@@ -142,7 +146,7 @@ async function buildDiagnosticsZip(): Promise<string> {
   return destPath;
 }
 
-export function registerDiagnosticsIpc(): void {
+export function registerDiagnosticsIpc(db: Database | null): void {
   ipcMain.handle('diagnostics:v1:log', (_e: unknown, raw: unknown): void => {
     const entry = parseLogEntry(raw);
     const scopedLogger = getLogger(`renderer:${entry.scope}`);
@@ -165,6 +169,29 @@ export function registerDiagnosticsIpc(): void {
       case 'error':
         scopedLogger.error(entry.message, fields);
         break;
+    }
+
+    // Persist only error-level renderer entries into diagnostic_events.
+    if (entry.level === 'error' && db !== null) {
+      const dataCode =
+        entry.data !== undefined && typeof entry.data['code'] === 'string'
+          ? (entry.data['code'] as string)
+          : undefined;
+      const code = dataCode ?? 'RENDERER_ERROR';
+      const runId =
+        entry.data !== undefined && typeof entry.data['runId'] === 'string'
+          ? (entry.data['runId'] as string)
+          : undefined;
+      recordDiagnosticEvent(db, {
+        level: 'error',
+        code,
+        scope: entry.scope,
+        runId,
+        fingerprint: computeFingerprint({ errorCode: code, stack: entry.stack }),
+        message: entry.message,
+        stack: entry.stack,
+        transient: false,
+      });
     }
   });
 
