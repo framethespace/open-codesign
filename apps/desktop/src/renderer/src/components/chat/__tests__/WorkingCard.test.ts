@@ -1,6 +1,6 @@
 import type { ChatToolCallPayload } from '@open-codesign/shared';
 import { describe, expect, it } from 'vitest';
-import { buildRows } from '../WorkingCard';
+import { buildRows, canShowLivePreview } from '../WorkingCard';
 
 function call(
   p: Partial<ChatToolCallPayload> & Pick<ChatToolCallPayload, 'toolName'>,
@@ -113,5 +113,11 @@ describe('WorkingCard.buildRows', () => {
     ];
     const rows = buildRows(calls);
     expect(rows[0]?.status).toBe('running');
+  });
+
+  it('shows the live preview only for view index.html rows', () => {
+    expect(canShowLivePreview({ label: 'view', detail: 'index.html' })).toBe(true);
+    expect(canShowLivePreview({ label: 'edit', detail: 'index.html' })).toBe(false);
+    expect(canShowLivePreview({ label: 'view', detail: 'styles.css' })).toBe(false);
   });
 });

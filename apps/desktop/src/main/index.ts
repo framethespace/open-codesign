@@ -492,6 +492,27 @@ function registerIpcHandlers(db: Database | null): void {
     return { errors };
   });
 
+  ipcMain.handle('codesign:v1:capture-preview-thumbnail', async (_e, raw: unknown) => {
+    if (
+      typeof raw !== 'object' ||
+      raw === null ||
+      typeof (raw as { html?: unknown }).html !== 'string'
+    ) {
+      throw new CodesignError(
+        'codesign:v1:capture-preview-thumbnail expects { html: string }',
+        'IPC_BAD_INPUT',
+      );
+    }
+    const html = (raw as { html: string }).html;
+    const captured = await captureArtifactScreenshot(html);
+    if (captured === null) return null;
+    return {
+      dataUrl: `data:${captured.mimeType};base64,${captured.data}`,
+      width: captured.width,
+      height: captured.height,
+    };
+  });
+
   ipcMain.handle('codesign:pick-input-files', async () => {
     const result = mainWindow
       ? await dialog.showOpenDialog(mainWindow, {
@@ -529,13 +550,41 @@ function registerIpcHandlers(db: Database | null): void {
           ? record['name'].trim()
           : 'pasted-screenshot.png';
       const safeName = basename(requestedName).replace(/[^\w.\-]+/g, '-');
-      const dir = join(app.getPath('temp'), 'open-codesign-pasted-images');
+      const dir = join(app.getPath('temp'), 'open-codesign-pasted-images', 'screenshot');
       mkdirSync(dir, { recursive: true });
       const filePath = join(
         dir,
         `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`,
       );
       const buffer = Buffer.from(Uint8Array.from(bytes));
+      await writeFile(filePath, buffer);
+      return LocalInputFile.parse({
+        path: filePath,
+        name: safeName,
+        size: buffer.byteLength,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'codesign:v1:save-clipboard-image',
+    async (_e, raw: unknown): Promise<LocalInputFile | null> => {
+      const record =
+        typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+      const requestedName =
+        typeof record['name'] === 'string' && record['name'].trim().length > 0
+          ? record['name'].trim()
+          : 'pasted-screenshot.png';
+      const image = clipboard.readImage();
+      if (image.isEmpty()) return null;
+      const safeName = basename(requestedName).replace(/[^\w.\-]+/g, '-');
+      const dir = join(app.getPath('temp'), 'open-codesign-pasted-images', 'screenshot');
+      mkdirSync(dir, { recursive: true });
+      const filePath = join(
+        dir,
+        `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`,
+      );
+      const buffer = image.toPNG();
       await writeFile(filePath, buffer);
       return LocalInputFile.parse({
         path: filePath,

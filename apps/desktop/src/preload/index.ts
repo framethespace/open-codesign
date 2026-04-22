@@ -169,6 +169,13 @@ export interface CanvasStoredState {
 export interface CanvasContextFile {
   name: string;
   content: string;
+  encoding?: 'utf8' | 'base64';
+}
+
+export interface PreviewThumbnail {
+  dataUrl: string;
+  width: number;
+  height: number;
 }
 
 /**
@@ -229,6 +236,10 @@ const api = {
     ipcRenderer.invoke('done:verify:v1', { artifact }) as Promise<{
       errors: Array<{ message: string; source?: string; lineno?: number }>;
     }>,
+  capturePreviewThumbnail: (html: string) =>
+    ipcRenderer.invoke('codesign:v1:capture-preview-thumbnail', {
+      html,
+    }) as Promise<PreviewThumbnail | null>,
   generate: (payload: {
     prompt: string;
     history: ChatMessage[];
@@ -263,6 +274,11 @@ const api = {
     ipcRenderer.invoke('codesign:pick-input-files') as Promise<LocalInputFile[]>,
   savePastedImage: (input: { name: string; bytes: number[] }) =>
     ipcRenderer.invoke('codesign:v1:save-pasted-image', input) as Promise<LocalInputFile>,
+  saveClipboardImage: (input?: { name?: string }) =>
+    ipcRenderer.invoke(
+      'codesign:v1:save-clipboard-image',
+      input ?? {},
+    ) as Promise<LocalInputFile | null>,
   pickDesignSystemDirectory: () =>
     ipcRenderer.invoke('codesign:pick-design-system-directory') as Promise<OnboardingState>,
   clearDesignSystem: () =>

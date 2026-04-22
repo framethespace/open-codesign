@@ -14,6 +14,8 @@ import {
   Wrench,
 } from 'lucide-react';
 import { useMemo } from 'react';
+import { useCodesignStore } from '../../store';
+import { HtmlPreviewThumbnail } from './HtmlPreviewThumbnail';
 
 export interface WorkingCardProps {
   calls: ChatToolCallPayload[];
@@ -62,6 +64,10 @@ interface ToolRow {
   status: 'running' | 'done' | 'error';
   todos?: TodoItem[];
   editCount?: number;
+}
+
+export function canShowLivePreview(row: Pick<ToolRow, 'label' | 'detail'>): boolean {
+  return row.label === 'view' && row.detail === 'index.html';
 }
 
 function extractTodos(call: ChatToolCallPayload): TodoItem[] {
@@ -258,10 +264,51 @@ function TodoListView({ todos }: { todos: TodoItem[] }) {
 
 function ToolRowView({ row }: { row: ToolRow }) {
   const { Icon } = row;
+  const previewHtml = useCodesignStore((s) => s.previewHtml);
+  const showPreview = canShowLivePreview(row) && previewHtml !== null;
   const detailText =
     row.detail && row.editCount && row.editCount > 1
       ? `${row.detail} (${row.editCount} edits)`
       : row.detail;
+
+  if (showPreview) {
+    return (
+      <div
+        className="flex items-start gap-[10px] rounded-[14px] border border-[var(--color-border-muted)] bg-[var(--color-surface)] px-[10px] py-[10px]"
+        title={detailText ?? row.label}
+      >
+        <HtmlPreviewThumbnail html={previewHtml} alt={detailText ?? row.label} />
+        <div className="min-w-0 flex-1 pt-[1px]">
+          <div className="flex items-center gap-[6px] text-[12.5px]">
+            {row.status === 'running' ? (
+              <span className="relative inline-flex w-[14px] h-[14px] items-center justify-center shrink-0">
+                <span className="absolute inline-block w-[7px] h-[7px] rounded-full bg-[var(--color-accent)] animate-pulse" />
+                <span className="absolute inline-block w-[12px] h-[12px] rounded-full border border-[var(--color-accent)]/30 animate-ping" />
+              </span>
+            ) : row.status === 'error' ? (
+              <Icon className="w-[14px] h-[14px] shrink-0 text-[var(--color-error)]" aria-hidden />
+            ) : (
+              <Icon
+                className="w-[14px] h-[14px] shrink-0 text-[var(--color-text-muted)]"
+                aria-hidden
+              />
+            )}
+            <span className="font-[var(--font-mono),ui-monospace,Menlo,monospace] text-[var(--color-text-secondary)]">
+              {row.label}
+            </span>
+            {detailText ? (
+              <span className="min-w-0 truncate font-[var(--font-mono),ui-monospace,Menlo,monospace] text-[var(--color-text-primary)]">
+                {detailText}
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-[6px] pl-[20px] text-[11px] leading-[1.4] text-[var(--color-text-muted)]">
+            What the model is reading right now.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

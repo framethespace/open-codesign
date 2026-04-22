@@ -2,7 +2,9 @@ import { useT } from '@open-codesign/i18n';
 import type { ChatMessageRow, ChatToolCallPayload } from '@open-codesign/shared';
 import { FileText } from 'lucide-react';
 import { useEffect, useRef } from 'react';
+import { useCodesignStore } from '../../store';
 import { AssistantText } from './AssistantText';
+import { HtmlPreviewThumbnail } from './HtmlPreviewThumbnail';
 import { UserMessage } from './UserMessage';
 import { InlineTodoList, WorkingCard } from './WorkingCard';
 
@@ -37,6 +39,7 @@ export function ChatMessageList({
   pendingToolCalls,
 }: ChatMessageListProps) {
   const t = useT();
+  const previewHtml = useCodesignStore((s) => s.previewHtml);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -139,17 +142,25 @@ export function ChatMessageList({
       items.push({
         key: `art-${msg.seq}`,
         node: (
-          <div className="flex items-center gap-[var(--space-2)] rounded-[var(--radius-md)] border border-[var(--color-border-muted)] bg-[var(--color-surface)] px-[var(--space-3)] py-[var(--space-2)]">
-            <FileText
-              className="w-[14px] h-[14px] text-[var(--color-text-secondary)] shrink-0"
-              aria-hidden
-            />
-            <span className="text-[12.5px] font-[ui-monospace,Menlo,monospace] text-[var(--color-text-primary)] truncate">
-              {label}
-            </span>
-            <span className="ml-auto text-[11px] text-[var(--color-text-muted)]">
-              {t('sidebar.chat.artifactDelivered')}
-            </span>
+          <div className="flex items-start gap-[10px] rounded-[14px] border border-[var(--color-border-muted)] bg-[var(--color-surface)] px-[10px] py-[10px]">
+            <HtmlPreviewThumbnail html={previewHtml} alt={label} />
+            <div className="min-w-0 flex-1 pt-[1px]">
+              <div className="flex items-center gap-[var(--space-2)]">
+                <FileText
+                  className="w-[14px] h-[14px] text-[var(--color-text-secondary)] shrink-0"
+                  aria-hidden
+                />
+                <span className="text-[12.5px] font-[ui-monospace,Menlo,monospace] text-[var(--color-text-primary)] truncate">
+                  {label}
+                </span>
+                <span className="ml-auto text-[11px] text-[var(--color-text-muted)]">
+                  {t('sidebar.chat.artifactDelivered')}
+                </span>
+              </div>
+              <div className="mt-[6px] pl-[22px] text-[11px] leading-[1.4] text-[var(--color-text-muted)]">
+                Snapshot of the latest UI the agent just delivered.
+              </div>
+            </div>
           </div>
         ),
       });
