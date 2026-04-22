@@ -41,6 +41,10 @@ feature list below.
 - **Canvas autosave and save-on-submit** — rough sketches are persisted per design, with an extra flush when you send a prompt
 - **Smart follow-up reuse** — canvas context is only resent on later turns when the canvas changed since the last successful generation
 
+<p align="center">
+  <img src="./website/Excalidraw-canvas.png" alt="Open CoDesign canvas tab with an Excalidraw wireframe and imported UI references" width="1000" />
+</p>
+
 For implementation details, see [`apps/desktop/CANVAS_CONTEXT.md`](./apps/desktop/CANVAS_CONTEXT.md).
 
 ---
