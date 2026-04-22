@@ -52,6 +52,8 @@ pnpm-debug.log*
 # Local data
 .claude/workspace/
 .claude/worktrees/
+.claude/scheduled_tasks.json
+.claude/scheduled_tasks.lock
 *.local
 
 # VitePress

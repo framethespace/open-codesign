@@ -13,6 +13,12 @@ import { useCodesignStore } from '../store';
 
 type TokenValue = unknown;
 type Tokens = Record<string, TokenValue>;
+const TWEAKS_STORAGE_KEY = 'open-codesign:tweaks-by-design';
+
+interface PersistedTweakState {
+  tokens: Tokens;
+  schema: TweakSchema | null;
+}
 
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 const CSS_COLOR_RE =
@@ -32,6 +38,56 @@ function humanize(key: string): string {
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readPersistedTweaks(designId: string | null): PersistedTweakState | null {
+  if (!designId || typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(TWEAKS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isPlainObject(parsed)) return null;
+    const entry = parsed[designId];
+    if (!isPlainObject(entry) || !isPlainObject(entry['tokens'])) return null;
+    return {
+      tokens: { ...(entry['tokens'] as Tokens) },
+      schema: isPlainObject(entry['schema']) ? (entry['schema'] as TweakSchema) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedTweaks(designId: string | null, state: PersistedTweakState): void {
+  if (!designId || typeof localStorage === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(TWEAKS_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : {};
+    const next = isPlainObject(parsed) ? { ...parsed } : {};
+    next[designId] = state;
+    localStorage.setItem(TWEAKS_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    /* noop */
+  }
+}
+
+function removePersistedTweaks(designId: string | null): void {
+  if (!designId || typeof localStorage === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(TWEAKS_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isPlainObject(parsed) || !(designId in parsed)) return;
+    const next = { ...parsed };
+    delete next[designId];
+    localStorage.setItem(TWEAKS_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    /* noop */
+  }
 }
 
 function ColorSwatch({
@@ -371,6 +427,7 @@ export function TweakPanel({
   iframeRef: RefObject<HTMLIFrameElement | null>;
 }) {
   const t = useT();
+  const currentDesignId = useCodesignStore((s) => s.currentDesignId);
   const previewHtml = useCodesignStore((s) => s.previewHtml);
   const setPreviewHtml = useCodesignStore((s) => s.setPreviewHtml);
   const [open, setOpen] = useState(false);
@@ -484,38 +541,65 @@ export function TweakPanel({
     [previewHtml],
   );
 
+  const persistedTweaks = useMemo(() => readPersistedTweaks(currentDesignId), [currentDesignId]);
+  const effectiveBlock = useMemo<EditmodeBlock | null>(() => {
+    if (block) return block;
+    if (!persistedTweaks) return null;
+    return {
+      tokens: persistedTweaks.tokens,
+      raw: JSON.stringify(persistedTweaks.tokens),
+      source: 'marked',
+    };
+  }, [block, persistedTweaks]);
+  const effectiveSchema = schema ?? persistedTweaks?.schema ?? null;
+
+  useEffect(() => {
+    if (!currentDesignId) return;
+    if (block) {
+      writePersistedTweaks(currentDesignId, {
+        tokens: { ...block.tokens },
+        schema: schema ?? persistedTweaks?.schema ?? null,
+      });
+      return;
+    }
+    if (schema === null && !persistedTweaks) return;
+    if (!effectiveBlock) {
+      removePersistedTweaks(currentDesignId);
+    }
+  }, [block, currentDesignId, effectiveBlock, persistedTweaks, schema]);
+
   // Live working copy — drives the UI and the postMessage stream to the iframe
   // without paying for a full srcdoc reload on every keystroke. Persistence
   // back into `previewHtml` is debounced (see persistTimer below).
   const [liveTokens, setLiveTokens] = useState<Tokens | null>(null);
   const liveSigRef = useRef<string>('');
   useEffect(() => {
-    if (!block) {
+    if (!effectiveBlock) {
       setLiveTokens(null);
       liveSigRef.current = '';
       return;
     }
-    const sig = Object.keys(block.tokens).sort().join('|');
+    const sig = Object.keys(effectiveBlock.tokens).sort().join('|');
     // Only resync from store when the *schema* (key set) changes — this happens
     // on a new artifact load. Otherwise we'd clobber the user's in-flight edits
     // each time `setPreviewHtml` settles from our own debounce.
     if (sig !== liveSigRef.current) {
-      setLiveTokens({ ...block.tokens });
+      setLiveTokens({ ...effectiveBlock.tokens });
       liveSigRef.current = sig;
     }
-  }, [block]);
+  }, [effectiveBlock]);
 
   const initialTokensRef = useRef<Tokens | null>(null);
   useEffect(() => {
-    if (!block) {
+    if (!effectiveBlock) {
       initialTokensRef.current = null;
       return;
     }
-    const sig = Object.keys(block.tokens).sort().join('|');
+    const sig = Object.keys(effectiveBlock.tokens).sort().join('|');
     if (initialTokensRef.current === null || liveSigRef.current !== sig) {
-      initialTokensRef.current = { ...block.tokens };
+      initialTokensRef.current = { ...effectiveBlock.tokens };
     }
-  }, [block]);
+  }, [effectiveBlock]);
 
   // Debounced persist back to the artifact source so reload / snapshot / export
   // see the tweaked state. Live updates have already gone via postMessage.
@@ -557,6 +641,10 @@ export function TweakPanel({
   function schedulePersist(tokens: Tokens): void {
     if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
     persistTimerRef.current = setTimeout(() => {
+      writePersistedTweaks(currentDesignId, {
+        tokens: { ...tokens },
+        schema: effectiveSchema,
+      });
       const html = useCodesignStore.getState().previewHtml;
       if (!html) return;
       setPreviewHtml(replaceEditmodeBlock(html, tokens));
@@ -657,7 +745,7 @@ export function TweakPanel({
                   value={value}
                   onChange={(next) => applyChange(key, next)}
                   pickColorLabel={pickColorLabel}
-                  schemaEntry={schema?.[key]}
+                  schemaEntry={effectiveSchema?.[key]}
                 />
               ))}
             </div>
