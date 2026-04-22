@@ -45,6 +45,9 @@ describe('readPersisted()', () => {
       generationTimeoutSec: 1200,
       checkForUpdatesOnStartup: true,
       autoContinueIncompleteTodos: true,
+      visualSelfReview: true,
+      enableFrontendAntiSlopSkill: true,
+      enableUncodixfySkill: false,
       dismissedUpdateVersion: '',
       diagnosticsLastReadTs: 0,
     });
@@ -132,6 +135,9 @@ describe('preferences v4 schema fields', () => {
     const prefs = await readPersisted();
     expect(prefs.checkForUpdatesOnStartup).toBe(true);
     expect(prefs.autoContinueIncompleteTodos).toBe(true);
+    expect(prefs.visualSelfReview).toBe(true);
+    expect(prefs.enableFrontendAntiSlopSkill).toBe(true);
+    expect(prefs.enableUncodixfySkill).toBe(false);
     expect(prefs.dismissedUpdateVersion).toBe('');
   });
 
@@ -144,6 +150,9 @@ describe('preferences v4 schema fields', () => {
         generationTimeoutSec: 1200,
         checkForUpdatesOnStartup: true,
         autoContinueIncompleteTodos: true,
+        visualSelfReview: true,
+        enableFrontendAntiSlopSkill: true,
+        enableUncodixfySkill: false,
         dismissedUpdateVersion: '',
       }),
     );
@@ -168,6 +177,9 @@ describe('preferences v4 schema fields', () => {
         generationTimeoutSec: 1200,
         checkForUpdatesOnStartup: true,
         autoContinueIncompleteTodos: true,
+        visualSelfReview: true,
+        enableFrontendAntiSlopSkill: true,
+        enableUncodixfySkill: false,
         dismissedUpdateVersion: '',
         diagnosticsLastReadTs: 0,
       }),
@@ -186,5 +198,42 @@ describe('preferences v4 schema fields', () => {
       autoContinueIncompleteTodos: boolean;
     };
     expect(written.autoContinueIncompleteTodos).toBe(false);
+  });
+
+  it('round-trips visual reflection preferences through preferences:v1:update', async () => {
+    readFileMock.mockResolvedValueOnce(
+      JSON.stringify({
+        schemaVersion: 7,
+        updateChannel: 'stable',
+        generationTimeoutSec: 1200,
+        checkForUpdatesOnStartup: true,
+        autoContinueIncompleteTodos: true,
+        visualSelfReview: true,
+        enableFrontendAntiSlopSkill: true,
+        enableUncodixfySkill: false,
+        dismissedUpdateVersion: '',
+        diagnosticsLastReadTs: 0,
+      }),
+    );
+    const updated = await (
+      handlers['preferences:v1:update'] as (_e: null, raw: unknown) => Promise<unknown>
+    )(null, {
+      visualSelfReview: false,
+      enableFrontendAntiSlopSkill: false,
+      enableUncodixfySkill: true,
+    });
+    expect(
+      updated as {
+        visualSelfReview: boolean;
+        enableFrontendAntiSlopSkill: boolean;
+        enableUncodixfySkill: boolean;
+      },
+    ).toEqual(
+      expect.objectContaining({
+        visualSelfReview: false,
+        enableFrontendAntiSlopSkill: false,
+        enableUncodixfySkill: true,
+      }),
+    );
   });
 });

@@ -28,6 +28,7 @@ import { autoUpdater } from 'electron-updater';
 import type { AgentStreamEvent } from '../preload/index';
 import { registerAppMenu } from './app-menu';
 import { showBootDialog, writeBootErrorSync } from './boot-fallback';
+import { registerCanvasIpc } from './canvas-ipc';
 import { registerChatMessagesIpc, registerChatMessagesUnavailableIpc } from './chat-messages-ipc';
 import { runCodexGenerate } from './codex-generate';
 import { registerCodexOAuthIpc } from './codex-oauth-ipc';
@@ -59,6 +60,7 @@ import { withRun } from './runContext';
 import { pruneDiagnosticEvents, recordDiagnosticEvent, safeInitSnapshotsDb } from './snapshots-db';
 import { registerSnapshotsIpc, registerSnapshotsUnavailableIpc } from './snapshots-ipc';
 import { initStorageSettings } from './storage-settings';
+import { captureArtifactScreenshot } from './visual-reflection';
 
 // ESM shim: package.json "type": "module" means the built bundle is ESM and
 // __dirname/__filename don't exist. Derive them from import.meta.url so the
@@ -243,6 +245,7 @@ function registerIpcHandlers(db: Database | null): void {
     id: string,
     designId: string | null,
     previousHtml: string | null,
+    prefs: Awaited<ReturnType<typeof readPreferences>>,
   ): ReturnType<typeof generate> => {
     if (!USE_AGENT_RUNTIME) return generate(input);
     const sendEvent = (event: AgentStreamEvent) => {
@@ -333,9 +336,18 @@ function registerIpcHandlers(db: Database | null): void {
     let deltaCount = 0;
     let toolCount = 0;
 
-    return generateViaAgent(input, {
+    const agentDeps = {
       fs,
       runtimeVerify,
+      captureReflectionImage: captureArtifactScreenshot,
+      disabledSkillIds: [
+        ...(prefs.enableFrontendAntiSlopSkill ? [] : ['frontend-design-anti-slop']),
+        ...(prefs.enableUncodixfySkill ? [] : ['frontend-design-uncodixfy']),
+      ],
+      visualReflection: {
+        enabled: prefs.visualSelfReview,
+        maxPasses: 1,
+      },
       onEvent: (event: AgentEvent) => {
         // High-signal only. Skip per-token deltas and inner message_*
         // markers. Emit a concise summary at turn_end.
@@ -427,7 +439,8 @@ function registerIpcHandlers(db: Database | null): void {
           return;
         }
       },
-    });
+    } as Parameters<typeof generateViaAgent>[1];
+    return generateViaAgent(input, agentDeps);
   };
 
   /** In-flight requests: generationId → AbortController */
@@ -602,6 +615,7 @@ function registerIpcHandlers(db: Database | null): void {
         referenceUrl: payload.referenceUrl,
         designSystem: cfg.designSystem ?? null,
       });
+      const prefs = await readPreferences();
 
       logIpc.info('generate', {
         generationId: id,
@@ -669,6 +683,7 @@ function registerIpcHandlers(db: Database | null): void {
           id,
           payload.designId ?? null,
           payload.previousHtml ?? null,
+          prefs,
         );
         logIpc.info('generate.ok', {
           generationId: id,
@@ -741,6 +756,7 @@ function registerIpcHandlers(db: Database | null): void {
         referenceUrl: payload.referenceUrl,
         designSystem: cfg.designSystem ?? null,
       });
+      const prefs = await readPreferences();
 
       logIpc.info('generate', {
         generationId: id,
@@ -779,6 +795,7 @@ function registerIpcHandlers(db: Database | null): void {
           id,
           null,
           null,
+          prefs,
         );
         logIpc.info('generate.ok', {
           generationId: id,
@@ -1090,6 +1107,7 @@ void app.whenReady().then(async () => {
     registerLocaleIpc();
     registerConnectionIpc();
     registerOnboardingIpc();
+    registerCanvasIpc();
     registerCodexOAuthIpc();
     registerPreferencesIpc();
     registerExporterIpc(() => mainWindow);

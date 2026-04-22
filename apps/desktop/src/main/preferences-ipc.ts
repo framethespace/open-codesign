@@ -17,7 +17,7 @@ import { getLogger } from './logger';
 
 const logger = getLogger('preferences-ipc');
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 // v1 → v2: raise the abandoned 120s timeout default (which aborted real
 // agentic runs mid-loop) to 600s. Values that happen to equal the old
 // default are treated as unmigrated defaults, not user intent.
@@ -37,6 +37,9 @@ export interface Preferences {
   generationTimeoutSec: number;
   checkForUpdatesOnStartup: boolean;
   autoContinueIncompleteTodos: boolean;
+  visualSelfReview: boolean;
+  enableFrontendAntiSlopSkill: boolean;
+  enableUncodixfySkill: boolean;
   dismissedUpdateVersion: string;
   /** Epoch ms of the last time the user opened the Diagnostics panel.
    *  Persisted so the unread-error badge doesn't flash every historical
@@ -57,6 +60,9 @@ const DEFAULTS: Preferences = {
   generationTimeoutSec: 1200,
   checkForUpdatesOnStartup: true,
   autoContinueIncompleteTodos: true,
+  visualSelfReview: true,
+  enableFrontendAntiSlopSkill: true,
+  enableUncodixfySkill: false,
   dismissedUpdateVersion: '',
   diagnosticsLastReadTs: 0,
 };
@@ -91,6 +97,18 @@ export async function readPersisted(): Promise<Preferences> {
         typeof parsed.autoContinueIncompleteTodos === 'boolean'
           ? parsed.autoContinueIncompleteTodos
           : DEFAULTS.autoContinueIncompleteTodos,
+      visualSelfReview:
+        typeof parsed.visualSelfReview === 'boolean'
+          ? parsed.visualSelfReview
+          : DEFAULTS.visualSelfReview,
+      enableFrontendAntiSlopSkill:
+        typeof parsed.enableFrontendAntiSlopSkill === 'boolean'
+          ? parsed.enableFrontendAntiSlopSkill
+          : DEFAULTS.enableFrontendAntiSlopSkill,
+      enableUncodixfySkill:
+        typeof parsed.enableUncodixfySkill === 'boolean'
+          ? parsed.enableUncodixfySkill
+          : DEFAULTS.enableUncodixfySkill,
       dismissedUpdateVersion:
         typeof parsed.dismissedUpdateVersion === 'string'
           ? parsed.dismissedUpdateVersion
@@ -157,6 +175,27 @@ function parsePreferences(raw: unknown): Partial<Preferences> {
       );
     }
     out.autoContinueIncompleteTodos = r['autoContinueIncompleteTodos'];
+  }
+  if (r['visualSelfReview'] !== undefined) {
+    if (typeof r['visualSelfReview'] !== 'boolean') {
+      throw new CodesignError('visualSelfReview must be a boolean', ERROR_CODES.IPC_BAD_INPUT);
+    }
+    out.visualSelfReview = r['visualSelfReview'];
+  }
+  if (r['enableFrontendAntiSlopSkill'] !== undefined) {
+    if (typeof r['enableFrontendAntiSlopSkill'] !== 'boolean') {
+      throw new CodesignError(
+        'enableFrontendAntiSlopSkill must be a boolean',
+        ERROR_CODES.IPC_BAD_INPUT,
+      );
+    }
+    out.enableFrontendAntiSlopSkill = r['enableFrontendAntiSlopSkill'];
+  }
+  if (r['enableUncodixfySkill'] !== undefined) {
+    if (typeof r['enableUncodixfySkill'] !== 'boolean') {
+      throw new CodesignError('enableUncodixfySkill must be a boolean', ERROR_CODES.IPC_BAD_INPUT);
+    }
+    out.enableUncodixfySkill = r['enableUncodixfySkill'];
   }
   if (r['dismissedUpdateVersion'] !== undefined) {
     if (typeof r['dismissedUpdateVersion'] !== 'string') {

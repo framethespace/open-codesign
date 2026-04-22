@@ -41,6 +41,7 @@ import {
   type ChatMessage,
   CodesignError,
   ERROR_CODES,
+  type LoadedSkill,
   type ModelRef,
   type StoredDesignSystem,
   canonicalBaseUrl,
@@ -229,6 +230,18 @@ interface PiModel {
   headers?: Record<string, string>;
 }
 
+export interface ReflectionCaptureResult {
+  data: string;
+  mimeType: string;
+  width: number;
+  height: number;
+}
+
+export interface VisualReflectionOptions {
+  enabled: boolean;
+  maxPasses?: number | undefined;
+}
+
 function apiForWire(wire: 'openai-chat' | 'openai-responses' | 'anthropic' | undefined): string {
   if (wire === 'anthropic') return 'anthropic-messages';
   if (wire === 'openai-responses') return 'openai-responses';
@@ -249,6 +262,7 @@ function buildPiModel(
   baseUrl: string | undefined,
   httpHeaders?: Record<string, string> | undefined,
   apiKey?: string,
+  supportsImages = false,
 ): PiModel {
   // Fall through to the canonical public endpoint for the 3 first-party
   // BYOK providers when the caller omitted baseUrl. This is a fact about
@@ -276,7 +290,7 @@ function buildPiModel(
     provider: model.provider,
     baseUrl: canonicalBase,
     reasoning: true,
-    input: ['text'],
+    input: supportsImages ? ['text', 'image'] : ['text'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 200000,
     maxTokens: 32000,
@@ -307,13 +321,14 @@ function buildPiModel(
 async function collectSkills(
   log: CoreLogger,
   providerId: string,
+  disabledSkillIds: string[] = [],
 ): Promise<{ blobs: string[]; warnings: string[] }> {
   const start = Date.now();
   try {
     const { loadBuiltinSkills } = await import('./skills/loader.js');
     const { filterActive, formatSkillsForPrompt } = await import('@open-codesign/providers');
     const skills = await loadBuiltinSkills();
-    const active = filterActive(skills, providerId);
+    const active = filterActive(filterDisabledSkills(skills, disabledSkillIds), providerId);
     const blobs = formatSkillsForPrompt(active);
     log.info('[generate] step=load_skills.ok', {
       ms: Date.now() - start,
@@ -326,6 +341,37 @@ async function collectSkills(
     log.warn('[generate] step=load_skills.fail', { errorClass, message });
     return { blobs: [], warnings: [`Builtin skills unavailable: ${message}`] };
   }
+}
+
+function filterDisabledSkills(skills: LoadedSkill[], disabledSkillIds: string[]): LoadedSkill[] {
+  if (disabledSkillIds.length === 0) return skills;
+  const disabled = new Set(disabledSkillIds);
+  return skills.filter((skill) => !disabled.has(skill.id));
+}
+
+function buildVisualReflectionPrompt(): string {
+  return [
+    'Review the attached screenshot of the current rendered page against the user request.',
+    'If you spot obvious visual problems, weak hierarchy, broken spacing, awkward density, unreadable contrast, generic AI-looking styling, or unfinished interaction polish, fix them in `index.html` now.',
+    'Prefer targeted edits over a full rewrite.',
+    'You may refine `TWEAK_DEFAULTS` and `TWEAK_SCHEMA` if better controls would help.',
+    'If the page is already strong, make at most one small improvement and then finish cleanly.',
+    'Before ending, call `done` if that tool is available.',
+  ].join(' ');
+}
+
+async function promptAgent(
+  agent: Agent,
+  message: unknown,
+  attachments?: Array<{ type: 'image'; data: string; mimeType: string }>,
+): Promise<void> {
+  const callable = agent as unknown as {
+    prompt: (
+      message: unknown,
+      attachments?: Array<{ type: 'image'; data: string; mimeType: string }>,
+    ) => Promise<void>;
+  };
+  await callable.prompt(message, attachments);
 }
 
 // ---------------------------------------------------------------------------
@@ -635,6 +681,14 @@ export interface GenerateViaAgentDeps {
    * to static lint only.
    */
   runtimeVerify?: DoneRuntimeVerifier | undefined;
+  /** Builtin skill ids to suppress for this run. */
+  disabledSkillIds?: string[] | undefined;
+  /** Host-provided screenshot capture for one visual reflection pass. */
+  captureReflectionImage?:
+    | ((artifactSource: string) => Promise<ReflectionCaptureResult | null>)
+    | undefined;
+  /** Visual critique/refinement pass configuration. */
+  visualReflection?: VisualReflectionOptions | undefined;
 }
 
 /**
@@ -674,6 +728,7 @@ export async function generateViaAgent(
     input.baseUrl,
     input.httpHeaders,
     input.apiKey,
+    deps.visualReflection?.enabled === true,
   );
   log.info('[generate] step=resolve_model.ok', { ...ctx, ms: Date.now() - resolveStart });
 
@@ -681,7 +736,7 @@ export async function generateViaAgent(
   const buildStart = Date.now();
   const skillResult = input.systemPrompt
     ? { blobs: [] as string[], warnings: [] as string[] }
-    : await collectSkills(log, input.model.provider);
+    : await collectSkills(log, input.model.provider, deps.disabledSkillIds ?? []);
   const systemPrompt =
     input.systemPrompt ??
     composeSystemPrompt({
@@ -792,7 +847,7 @@ export async function generateViaAgent(
   log.info('[generate] step=send_request', ctx);
   const sendStart = Date.now();
   try {
-    await agent.prompt(userContent);
+    await promptAgent(agent, userContent);
     await agent.waitForIdle();
   } catch (err) {
     log.error('[generate] step=send_request.fail', {
@@ -820,6 +875,34 @@ export async function generateViaAgent(
     );
   }
   log.info('[generate] step=send_request.ok', { ...ctx, ms: Date.now() - sendStart });
+
+  const reflectionWarnings: string[] = [];
+  const reflectionPasses =
+    deps.visualReflection?.enabled === true ? Math.max(0, deps.visualReflection.maxPasses ?? 1) : 0;
+  if (reflectionPasses > 0 && deps.captureReflectionImage && deps.fs) {
+    for (let pass = 0; pass < reflectionPasses; pass++) {
+      const currentArtifact = deps.fs.view('index.html');
+      if (!currentArtifact || currentArtifact.content.trim().length === 0) break;
+      try {
+        const screenshot = await deps.captureReflectionImage(currentArtifact.content);
+        if (!screenshot) {
+          reflectionWarnings.push(
+            'Visual self-review skipped: could not capture preview screenshot.',
+          );
+          break;
+        }
+        await promptAgent(agent, buildVisualReflectionPrompt(), [
+          { type: 'image', data: screenshot.data, mimeType: screenshot.mimeType },
+        ]);
+        await agent.waitForIdle();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        log.warn('[generate] step=visual_reflection.fail', { ...ctx, pass: pass + 1, message });
+        reflectionWarnings.push(`Visual self-review skipped: ${message}`);
+        break;
+      }
+    }
+  }
 
   log.info('[generate] step=parse_response', ctx);
   const parseStart = Date.now();
@@ -866,8 +949,9 @@ export async function generateViaAgent(
     outputTokens: usage.outputTokens,
     costUsd: usage.costUsd,
   };
-  return skillResult.warnings.length > 0
-    ? { ...output, warnings: [...(output.warnings ?? []), ...skillResult.warnings] }
+  const warnings = [...skillResult.warnings, ...reflectionWarnings];
+  return warnings.length > 0
+    ? { ...output, warnings: [...(output.warnings ?? []), ...warnings] }
     : output;
 }
 

@@ -184,7 +184,7 @@ Already using Claude Code or Codex? Your providers, models, and API keys import 
 
 Generic AI tools tend to produce generic output. Open CoDesign ships with **twelve built-in design skill modules** — slide decks, dashboards, landing pages, SVG charts, glassmorphism, editorial typography, heroes, pricing, footers, chat UIs, data tables, and calendars — plus a built-in taste layer that steers the model toward considered typography, purposeful whitespace, and meaningful color.
 
-Every skill is available in every generation. Before the model writes a line of CSS, it selects the skills that fit the brief and reasons through layout intent, design-system coherence, and contrast, bringing higher-quality design behavior to whichever model you choose.
+By default, the built-in taste layer stays on, and you can now toggle the stronger style modules in Settings → Advanced. That includes the original anti-slop layer plus an optional Uncodixfy-inspired cleanup skill for pushing layouts away from generic AI-looking tropes.
 
 Add a `SKILL.md` to any project to teach the model your own taste.
 
@@ -213,6 +213,8 @@ Add a `SKILL.md` to any project to teach the model your own taste.
 - **Connection diagnostic panel** — one-click test for any provider, with actionable errors
 - **Top-bar usage badge** — see context-window usage, token totals, and USD cost for the latest run beside the model selector
 - **Automatic checklist continuation** — unfinished agent todo lists can continue automatically with one silent follow-up; disable it anytime in Advanced settings
+- **Visual self-review** — after the first render, Open CoDesign can capture the live preview as an image and feed it back into the same agent for one screenshot-based refinement pass
+- **Toggleable taste controls** — enable or disable visual self-review, the anti-slop skill, and the Uncodixfy-inspired cleanup skill in Advanced settings
 - **Settings with five tabs** — Models, Appearance, Storage, Diagnostics, and Advanced
 - **Light + dark themes**, **EN + 简体中文 UI** with live toggle
 

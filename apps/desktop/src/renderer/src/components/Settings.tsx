@@ -1796,6 +1796,9 @@ function AdvancedTab() {
     generationTimeoutSec: 1200,
     checkForUpdatesOnStartup: true,
     autoContinueIncompleteTodos: true,
+    visualSelfReview: true,
+    enableFrontendAntiSlopSkill: true,
+    enableUncodixfySkill: false,
     dismissedUpdateVersion: '',
     diagnosticsLastReadTs: 0,
   });
@@ -1877,6 +1880,42 @@ function AdvancedTab() {
           type="checkbox"
           checked={prefs.autoContinueIncompleteTodos}
           onChange={(e) => void updatePref({ autoContinueIncompleteTodos: e.target.checked })}
+          className="h-4 w-4 accent-[var(--color-accent)]"
+        />
+      </Row>
+
+      <Row
+        label={t('settings.advanced.visualSelfReview')}
+        hint={t('settings.advanced.visualSelfReviewHint')}
+      >
+        <input
+          type="checkbox"
+          checked={prefs.visualSelfReview}
+          onChange={(e) => void updatePref({ visualSelfReview: e.target.checked })}
+          className="h-4 w-4 accent-[var(--color-accent)]"
+        />
+      </Row>
+
+      <Row
+        label={t('settings.advanced.enableFrontendAntiSlopSkill')}
+        hint={t('settings.advanced.enableFrontendAntiSlopSkillHint')}
+      >
+        <input
+          type="checkbox"
+          checked={prefs.enableFrontendAntiSlopSkill}
+          onChange={(e) => void updatePref({ enableFrontendAntiSlopSkill: e.target.checked })}
+          className="h-4 w-4 accent-[var(--color-accent)]"
+        />
+      </Row>
+
+      <Row
+        label={t('settings.advanced.enableUncodixfySkill')}
+        hint={t('settings.advanced.enableUncodixfySkillHint')}
+      >
+        <input
+          type="checkbox"
+          checked={prefs.enableUncodixfySkill}
+          onChange={(e) => void updatePref({ enableUncodixfySkill: e.target.checked })}
           className="h-4 w-4 accent-[var(--color-accent)]"
         />
       </Row>

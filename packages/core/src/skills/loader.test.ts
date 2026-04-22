@@ -54,12 +54,13 @@ Full skill body here.
 // ---------------------------------------------------------------------------
 
 describe('loadSkillsFromDir()', () => {
-  it('loads 4 builtin skills from the real builtin directory', async () => {
+  it('loads builtin skills from the real builtin directory', async () => {
     const builtinDir = new URL('./builtin', import.meta.url).pathname;
     const skills = await loadSkillsFromDir(builtinDir, 'builtin');
-    expect(skills.length).toBe(4);
+    expect(skills.length).toBe(5);
     const ids = skills.map((s) => s.id).sort();
     expect(ids).toContain('frontend-design-anti-slop');
+    expect(ids).toContain('frontend-design-uncodixfy');
     expect(ids).toContain('pitch-deck');
     expect(ids).toContain('data-viz-recharts');
     expect(ids).toContain('mobile-mock');

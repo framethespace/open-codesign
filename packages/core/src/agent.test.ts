@@ -8,7 +8,7 @@ const loadBuiltinSkillsMock = vi.fn(async (): Promise<LoadedSkill[]> => []);
 /** Captured constructor options + prompt calls for the mocked Agent. */
 interface AgentCall {
   options: AgentOptions;
-  prompts: Array<{ message: unknown }>;
+  prompts: Array<{ message: unknown; attachments?: unknown[] }>;
   listeners: Array<(e: AgentEvent) => void>;
   aborted: boolean;
 }
@@ -55,8 +55,8 @@ vi.mock('@mariozechner/pi-agent-core', () => {
       this.call.listeners.push((e) => listener(e));
       return () => {};
     }
-    async prompt(message: unknown): Promise<void> {
-      this.call.prompts.push({ message });
+    async prompt(message: unknown, attachments?: unknown[]): Promise<void> {
+      this.call.prompts.push(attachments === undefined ? { message } : { message, attachments });
       if (scriptedAgent.promptThrows) throw scriptedAgent.promptThrows;
 
       this.emit({ type: 'agent_start' });
@@ -222,6 +222,41 @@ describe('generateViaAgent() — Phase 1 pass-through', () => {
     await expect(Promise.resolve(resolver?.('anthropic'))).resolves.toBe('sk-token-123');
   });
 
+  it('runs one screenshot-based reflection follow-up when enabled', async () => {
+    scriptedAgent = { assistantText: RESPONSE_WITH_ARTIFACT };
+    await generateViaAgent(
+      {
+        prompt: 'design a meditation app',
+        history: [],
+        model: MODEL,
+        apiKey: 'sk-test',
+      },
+      {
+        fs: {
+          view: () => ({ content: SAMPLE_HTML, numLines: 1 }),
+          create: () => ({ path: 'index.html' }),
+          strReplace: () => ({ path: 'index.html' }),
+          insert: () => ({ path: 'index.html' }),
+          listDir: () => ['index.html'],
+        },
+        tools: [],
+        visualReflection: { enabled: true, maxPasses: 1 },
+        captureReflectionImage: async () => ({
+          data: 'base64png',
+          mimeType: 'image/png',
+          width: 1280,
+          height: 900,
+        }),
+      },
+    );
+
+    const call = agentCalls[0];
+    expect(call?.prompts).toHaveLength(2);
+    expect(call?.prompts[1]?.attachments).toEqual([
+      { type: 'image', data: 'base64png', mimeType: 'image/png' },
+    ]);
+  });
+
   it('overrides pi-ai model baseUrl when input.baseUrl is provided', async () => {
     scriptedAgent = { assistantText: RESPONSE_WITH_ARTIFACT };
     await generateViaAgent({
@@ -263,6 +298,55 @@ describe('generateViaAgent() — Phase 1 pass-through', () => {
     expect(result.inputTokens).toBe(42);
     expect(result.outputTokens).toBe(84);
     expect(result.costUsd).toBeCloseTo(0.0012);
+  });
+
+  it('drops disabled builtin skills from the injected prompt', async () => {
+    loadBuiltinSkillsMock.mockResolvedValueOnce([
+      {
+        id: 'frontend-design-anti-slop',
+        source: 'builtin',
+        frontmatter: {
+          schemaVersion: 1,
+          name: 'frontend-design-anti-slop',
+          description: 'Anti slop',
+          trigger: { providers: ['*'], scope: 'system' },
+          disable_model_invocation: false,
+          user_invocable: true,
+        },
+        body: 'anti slop body',
+      },
+      {
+        id: 'frontend-design-uncodixfy',
+        source: 'builtin',
+        frontmatter: {
+          schemaVersion: 1,
+          name: 'frontend-design-uncodixfy',
+          description: 'Uncodixfy',
+          trigger: { providers: ['*'], scope: 'system' },
+          disable_model_invocation: false,
+          user_invocable: true,
+        },
+        body: 'uncodixfy body',
+      },
+    ]);
+    scriptedAgent = { assistantText: RESPONSE_WITH_ARTIFACT };
+
+    await generateViaAgent(
+      {
+        prompt: 'design a dashboard',
+        history: [],
+        model: MODEL,
+        apiKey: 'sk-test',
+      },
+      {
+        tools: [],
+        disabledSkillIds: ['frontend-design-anti-slop', 'frontend-design-uncodixfy'],
+      },
+    );
+
+    const systemPrompt = String(agentCalls[0]?.options.initialState?.systemPrompt ?? '');
+    expect(systemPrompt).not.toContain('anti slop body');
+    expect(systemPrompt).not.toContain('uncodixfy body');
   });
 
   it('emits agent lifecycle events through onEvent subscriber in order', async () => {
