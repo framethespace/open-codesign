@@ -43,6 +43,8 @@
     "contextBadge": "画布上下文",
     "contextReady": "画布上下文将随本次发送",
     "contextUpToDate": "画布未变更",
+    "contextPreviewFull": "完整画布",
+    "contextPreviewFrame": "画框 {{count}}",
     "filesTabEmpty": "还没有文件",
     "openInTab": "在新标签打开",
     "previewHint": "缩略预览 · 双击文件名或点击「在新标签打开」可在独立标签查看",
@@ -135,6 +137,15 @@
       "tokensLine": "约 {{count}} tokens",
       "artifactDelivered": "已生成",
       "artifactDefaultLabel": "design.html",
+      "paste": {
+        "attachedTitle": "截图已附加",
+        "attachedDescription_one": "已将 {{count}} 张图片加入提示词。",
+        "attachedDescription_other": "已将 {{count}} 张图片加入提示词。",
+        "emptyTitle": "剪贴板里没有图片",
+        "emptyDescription": "请先复制截图，再粘贴到聊天输入框。",
+        "failedTitle": "无法附加粘贴的图片",
+        "failedDescription": "请重新复制截图后再试一次。"
+      },
       "tool": {
         "done": "完成"
       },

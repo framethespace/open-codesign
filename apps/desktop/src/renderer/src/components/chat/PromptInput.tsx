@@ -61,16 +61,7 @@ export interface PromptInputHandle {
  *   Shift+Enter     — newline
  */
 export const PromptInput = forwardRef<PromptInputHandle, PromptInputProps>(function PromptInput(
-  {
-    prompt,
-    setPrompt,
-    onSubmit,
-    onCancel,
-    isGenerating,
-    contextSummary,
-    leadingAction,
-    onPaste,
-  },
+  { prompt, setPrompt, onSubmit, onCancel, isGenerating, contextSummary, leadingAction, onPaste },
   ref,
 ) {
   const t = useT();

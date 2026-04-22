@@ -699,6 +699,8 @@ export interface GenerateViaAgentDeps {
         message: string;
       }) => void)
     | undefined;
+  /** Optional image attachments included with the first user prompt. */
+  initialPromptAttachments?: Array<{ type: 'image'; data: string; mimeType: string }> | undefined;
 }
 
 /**
@@ -884,7 +886,7 @@ export async function generateViaAgent(
   log.info('[generate] step=send_request', ctx);
   const sendStart = Date.now();
   try {
-    await promptAgent(agent, userContent);
+    await promptAgent(agent, userContent, deps.initialPromptAttachments);
     await agent.waitForIdle();
   } catch (err) {
     log.error('[generate] step=send_request.fail', {
@@ -942,7 +944,8 @@ export async function generateViaAgent(
         if (!screenshot) {
           deps.onReflectionEvent?.({
             phase: 'skipped',
-            message: 'Skipped screenshot self-review because the preview image could not be captured.',
+            message:
+              'Skipped screenshot self-review because the preview image could not be captured.',
           });
           reflectionWarnings.push(
             'Visual self-review skipped: could not capture preview screenshot.',

@@ -43,6 +43,8 @@
     "contextBadge": "Canvas context",
     "contextReady": "Canvas context ready",
     "contextUpToDate": "Canvas unchanged",
+    "contextPreviewFull": "Full canvas",
+    "contextPreviewFrame": "Frame {{count}}",
     "filesTabEmpty": "No files yet",
     "openInTab": "Open in tab",
     "previewHint": "Thumbnail preview · double-click the file or use Open in tab for full view",
@@ -135,6 +137,15 @@
       "tokensLine": "~{{count}} tokens",
       "artifactDelivered": "delivered",
       "artifactDefaultLabel": "design.html",
+      "paste": {
+        "attachedTitle": "Screenshot attached",
+        "attachedDescription_one": "{{count}} image added to the prompt.",
+        "attachedDescription_other": "{{count}} images added to the prompt.",
+        "emptyTitle": "No image found on the clipboard",
+        "emptyDescription": "Copy a screenshot first, then paste it into the chat box.",
+        "failedTitle": "Couldn't attach pasted image",
+        "failedDescription": "Try copying the screenshot again, then paste into the chat box."
+      },
       "tool": {
         "done": "Done"
       },

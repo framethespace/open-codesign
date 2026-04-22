@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { formatIframeError } from './components/PreviewPane';
 import { humanizePreviewError } from './components/CanvasErrorBar';
+import { formatIframeError } from './components/PreviewPane';
 
 describe('formatIframeError', () => {
   it('omits location when source or lineno is missing', () => {

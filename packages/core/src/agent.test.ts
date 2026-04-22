@@ -351,6 +351,26 @@ describe('generateViaAgent() — Phase 1 pass-through', () => {
     ).rejects.toBe(authErr);
   });
 
+  it('attaches initial review images to the first user prompt', async () => {
+    scriptedAgent = { assistantText: RESPONSE_WITH_ARTIFACT };
+    await generateViaAgent(
+      {
+        prompt: 'Please review what changed',
+        history: [],
+        model: MODEL,
+        apiKey: 'sk-test',
+      },
+      {
+        initialPromptAttachments: [{ type: 'image', data: 'reviewpng', mimeType: 'image/png' }],
+      },
+    );
+
+    const call = agentCalls[0];
+    expect(call?.prompts[0]?.attachments).toEqual([
+      { type: 'image', data: 'reviewpng', mimeType: 'image/png' },
+    ]);
+  });
+
   it('overrides pi-ai model baseUrl when input.baseUrl is provided', async () => {
     scriptedAgent = { assistantText: RESPONSE_WITH_ARTIFACT };
     await generateViaAgent({

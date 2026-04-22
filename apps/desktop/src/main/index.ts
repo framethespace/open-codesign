@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs';
-import { stat, writeFile } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -43,7 +43,7 @@ import { registerConnectionIpc } from './connection-ipc';
 import { scanDesignSystem } from './design-system';
 import { registerDiagnosticsIpc } from './diagnostics-ipc';
 import { makeRuntimeVerifier } from './done-verify';
-import { BrowserWindow, app, clipboard, dialog, ipcMain, shell } from './electron-runtime';
+import { BrowserWindow, Menu, app, clipboard, dialog, ipcMain, shell } from './electron-runtime';
 import { registerExporterIpc } from './exporter-ipc';
 import { armGenerationTimeout, cancelGenerationRequest } from './generation-ipc';
 import { maybeAbortIfRunningFromDmg } from './install-check';
@@ -64,6 +64,7 @@ import { createProviderContextStore } from './provider-context';
 import { resolveActiveModel } from './provider-settings';
 import { cleanupStaleTmps } from './reported-fingerprints';
 import { resolveActiveApiKey, resolveApiKeyWithKeylessFallback } from './resolve-api-key';
+import { buildReviewScreenshotAttachment } from './review-screenshot';
 import { withRun } from './runContext';
 import { pruneDiagnosticEvents, recordDiagnosticEvent, safeInitSnapshotsDb } from './snapshots-db';
 import { registerSnapshotsIpc, registerSnapshotsUnavailableIpc } from './snapshots-ipc';
@@ -81,6 +82,17 @@ let mainWindow: ElectronBrowserWindow | null = null;
 // shows the banner. Cleared only on app quit (matching the one-shot nature
 // of autoUpdater — a new check will re-emit if still applicable).
 let pendingUpdateAvailable: unknown = null;
+
+function imageMimeFromPath(path: string): string | null {
+  const lower = path.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.bmp')) return 'image/bmp';
+  if (lower.endsWith('.svg')) return 'image/svg+xml';
+  return null;
+}
 
 const defaultUserDataDir = app.getPath('userData');
 const storageLocations = initStorageSettings(defaultUserDataDir);
@@ -143,6 +155,30 @@ function createWindow(): void {
       void shell.openExternal(url);
     }
     return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const template: Electron.MenuItemConstructorOptions[] = [];
+    if (params.isEditable) {
+      template.push(
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      );
+    } else if (params.selectionText.trim().length > 0) {
+      template.push({ role: 'copy' }, { role: 'selectAll' });
+    }
+    if (template.length === 0) return;
+    const menu = Menu.buildFromTemplate(template);
+    if (mainWindow) {
+      menu.popup({ window: mainWindow });
+      return;
+    }
+    menu.popup();
   });
 
   // Replay any update event that fired before this window was ready
@@ -273,7 +309,7 @@ function registerIpcHandlers(db: Database | null): void {
    * `agent:event:v1` so the sidebar chat can render incremental output
    * instead of waiting for the full final message.
    */
-  const runGenerate = (
+  const runGenerate = async (
     input: Parameters<typeof generate>[0],
     id: string,
     designId: string | null,
@@ -369,7 +405,7 @@ function registerIpcHandlers(db: Database | null): void {
     let deltaCount = 0;
     let toolCount = 0;
 
-    const agentDeps = {
+    const agentDeps: NonNullable<Parameters<typeof generateViaAgent>[1]> = {
       fs,
       runtimeVerify,
       captureReflectionImage: captureArtifactScreenshot,
@@ -483,7 +519,12 @@ function registerIpcHandlers(db: Database | null): void {
           return;
         }
       },
-    } as Parameters<typeof generateViaAgent>[1];
+    };
+    agentDeps.initialPromptAttachments = await buildReviewScreenshotAttachment({
+      prompt: input.prompt,
+      previousHtml,
+      capture: captureArtifactScreenshot,
+    });
     return generateViaAgent(input, agentDeps);
   };
 
@@ -623,6 +664,30 @@ function registerIpcHandlers(db: Database | null): void {
         name: safeName,
         size: buffer.byteLength,
       });
+    },
+  );
+
+  ipcMain.handle(
+    'codesign:v1:read-local-image-data-url',
+    async (_e, raw: unknown): Promise<string | null> => {
+      if (typeof raw !== 'object' || raw === null) {
+        throw new CodesignError(
+          'read-local-image-data-url expects an object payload',
+          'IPC_BAD_INPUT',
+        );
+      }
+      const record = raw as Record<string, unknown>;
+      const path = typeof record['path'] === 'string' ? record['path'].trim() : '';
+      if (path.length === 0) {
+        throw new CodesignError(
+          'read-local-image-data-url requires a non-empty path',
+          'IPC_BAD_INPUT',
+        );
+      }
+      const mime = imageMimeFromPath(path);
+      if (!mime) return null;
+      const bytes = await readFile(path);
+      return `data:${mime};base64,${bytes.toString('base64')}`;
     },
   );
 

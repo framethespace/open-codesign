@@ -308,6 +308,7 @@ export type {
   ChatAppendInput,
   ChatArtifactDeliveredPayload,
   ChatAssistantTextPayload,
+  ChatContextPreview,
   ChatErrorPayload,
   ChatMessageRow,
   ChatToolCallPayload,

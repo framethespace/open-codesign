@@ -129,12 +129,15 @@ export function registerCanvasIpc(): void {
           typeof file['name'] === 'string' ? file['name'] : `canvas-context-${index + 1}.txt`,
         );
         const content = typeof file['content'] === 'string' ? file['content'] : '';
+        const encoding = file['encoding'] === 'base64' ? 'base64' : 'utf8';
         const path = join(canvasExportDir(designId), `${stamp}-${index + 1}-${name}`);
-        await writeFile(path, content, 'utf8');
+        const bytes =
+          encoding === 'base64' ? Buffer.from(content, 'base64') : Buffer.from(content, 'utf8');
+        await writeFile(path, bytes);
         return LocalInputFile.parse({
           path,
           name,
-          size: Buffer.byteLength(content, 'utf8'),
+          size: bytes.byteLength,
         });
       }),
     );

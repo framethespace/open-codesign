@@ -1,5 +1,9 @@
 import { useT } from '@open-codesign/i18n';
-import type { ChatMessageRow, ChatToolCallPayload } from '@open-codesign/shared';
+import type {
+  ChatContextPreview,
+  ChatMessageRow,
+  ChatToolCallPayload,
+} from '@open-codesign/shared';
 import { FileText } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useCodesignStore } from '../../store';
@@ -117,6 +121,7 @@ export function ChatMessageList({
         text?: string;
         attachedSkills?: string[];
         contextBadges?: string[];
+        contextPreviews?: ChatContextPreview[];
       };
       items.push({
         key: `u-${msg.seq}`,
@@ -125,6 +130,7 @@ export function ChatMessageList({
             text={p?.text ?? ''}
             {...(p?.attachedSkills ? { attachedSkills: p.attachedSkills } : {})}
             {...(p?.contextBadges ? { contextBadges: p.contextBadges } : {})}
+            {...(p?.contextPreviews ? { contextPreviews: p.contextPreviews } : {})}
           />
         ),
       });

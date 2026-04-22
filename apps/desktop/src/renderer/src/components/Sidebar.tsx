@@ -1,7 +1,7 @@
 import { useT } from '@open-codesign/i18n';
 import type { LocalInputFile, OnboardingState } from '@open-codesign/shared';
 import { FolderOpen, Link2, Paperclip, X } from 'lucide-react';
-import { type ClipboardEvent, useEffect, useRef } from 'react';
+import { type ClipboardEvent, useEffect, useRef, useState } from 'react';
 import { useAgentStream } from '../hooks/useAgentStream';
 import { useCodesignStore } from '../store';
 import { ModelSwitcher } from './ModelSwitcher';
@@ -22,6 +22,93 @@ interface ComposerContextItem {
   label: string;
   icon: 'file' | 'url' | 'designSystem';
   actionLabel?: string;
+}
+
+const attachmentPreviewCache = new Map<string, string | null>();
+const attachmentPreviewPending = new Map<string, Promise<string | null>>();
+
+function isImageAttachment(file: LocalInputFile): boolean {
+  return /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(file.name);
+}
+
+async function loadAttachmentPreview(path: string): Promise<string | null> {
+  const cached = attachmentPreviewCache.get(path);
+  if (cached !== undefined) return cached;
+  const pending = attachmentPreviewPending.get(path);
+  if (pending) return pending;
+  const next = window.codesign?.readLocalImageDataUrl?.({ path }) ?? Promise.resolve(null);
+  attachmentPreviewPending.set(path, next);
+  try {
+    const resolved = await next;
+    attachmentPreviewCache.set(path, resolved);
+    return resolved;
+  } finally {
+    attachmentPreviewPending.delete(path);
+  }
+}
+
+function AttachmentChip({
+  file,
+  isCanvasImport,
+  removeLabel,
+  canvasLabel,
+  onRemove,
+}: {
+  file: LocalInputFile;
+  isCanvasImport: boolean;
+  removeLabel: string;
+  canvasLabel: string;
+  onRemove: () => void;
+}) {
+  const isImage = isImageAttachment(file);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(() =>
+    isImage ? (attachmentPreviewCache.get(file.path) ?? null) : null,
+  );
+
+  useEffect(() => {
+    if (!isImage) {
+      setPreviewUrl(null);
+      return;
+    }
+    let cancelled = false;
+    void loadAttachmentPreview(file.path).then((resolved) => {
+      if (!cancelled) setPreviewUrl(resolved);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [file.path, isImage]);
+
+  return (
+    <span
+      className={`inline-flex max-w-full items-center gap-[8px] border border-[var(--color-border)] bg-[var(--color-background-secondary)] text-[11px] text-[var(--color-text-secondary)] ${previewUrl ? 'rounded-[14px] px-[6px] py-[5px]' : 'rounded-full px-[10px] py-[5px]'}`}
+      title={file.path}
+    >
+      {previewUrl ? (
+        <span className="h-[38px] w-[38px] shrink-0 overflow-hidden rounded-[10px] border border-[var(--color-border-muted)] bg-[var(--color-surface)]">
+          <img src={previewUrl} alt={file.name} className="h-full w-full object-cover" />
+        </span>
+      ) : (
+        <ContextIcon icon="file" />
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate max-w-[180px]">{file.name}</span>
+        {isCanvasImport ? (
+          <span className="block text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+            {canvasLabel}
+          </span>
+        ) : null}
+      </span>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={removeLabel}
+        className="inline-flex items-center justify-center rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
+      >
+        <X className="w-3 h-3" aria-hidden />
+      </button>
+    </span>
+  );
 }
 
 export function buildComposerContextItems(input: {
@@ -95,6 +182,7 @@ export function Sidebar({ prompt, setPrompt, onSubmit }: SidebarProps) {
   const pickDesignSystemDirectory = useCodesignStore((s) => s.pickDesignSystemDirectory);
   const clearDesignSystem = useCodesignStore((s) => s.clearDesignSystem);
   const lastUsage = useCodesignStore((s) => s.lastUsage);
+  const pushToast = useCodesignStore((s) => s.pushToast);
 
   const chatMessages = useCodesignStore((s) => s.chatMessages);
   const chatLoaded = useCodesignStore((s) => s.chatLoaded);
@@ -143,23 +231,83 @@ export function Sidebar({ prompt, setPrompt, onSubmit }: SidebarProps) {
   const lastTokens = lastUsage ? lastUsage.inputTokens + lastUsage.outputTokens : null;
 
   async function handlePromptPaste(event: ClipboardEvent<HTMLTextAreaElement>): Promise<void> {
-    const items = Array.from(event.clipboardData.items ?? []);
+    const clipboardData = event.clipboardData;
+    const items = Array.from(clipboardData.items ?? []);
     const imageFiles = items
       .filter((item) => item.type.startsWith('image/'))
       .map((item) => item.getAsFile())
       .filter((file): file is File => file !== null);
-    if (imageFiles.length === 0 || !window.codesign?.savePastedImage) return;
+    const clipboardFiles = Array.from(clipboardData.files ?? []).filter((file) =>
+      file.type.startsWith('image/'),
+    );
+    const allImageFiles = [...imageFiles, ...clipboardFiles].filter(
+      (file, index, all) =>
+        all.findIndex(
+          (candidate) =>
+            candidate.name === file.name &&
+            candidate.size === file.size &&
+            candidate.type === file.type,
+        ) === index,
+    );
+    const plainText = clipboardData.getData('text/plain').trim();
+    if (allImageFiles.length === 0) {
+      if (plainText.length > 0) return;
+      if (!window.codesign?.saveClipboardImage) return;
+      event.preventDefault();
+      try {
+        const fallback = await window.codesign.saveClipboardImage({
+          name: 'pasted-screenshot.png',
+        });
+        if (!fallback) {
+          pushToast({
+            variant: 'info',
+            title: t('sidebar.chat.paste.emptyTitle'),
+            description: t('sidebar.chat.paste.emptyDescription'),
+          });
+          return;
+        }
+        addInputFiles([fallback]);
+        pushToast({
+          variant: 'success',
+          title: t('sidebar.chat.paste.attachedTitle'),
+          description: t('sidebar.chat.paste.attachedDescription', { count: 1 }),
+        });
+      } catch (error) {
+        pushToast({
+          variant: 'error',
+          title: t('sidebar.chat.paste.failedTitle'),
+          description:
+            error instanceof Error ? error.message : t('sidebar.chat.paste.failedDescription'),
+        });
+      }
+      return;
+    }
+    if (!window.codesign?.savePastedImage) return;
     event.preventDefault();
     const savedFiles: LocalInputFile[] = [];
-    for (const file of imageFiles) {
-      const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-      const ext =
-        file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/webp' ? 'webp' : 'png';
-      const name =
-        file.name && file.name.trim().length > 0 ? file.name : `pasted-screenshot.${ext}`;
-      savedFiles.push(await window.codesign.savePastedImage({ name, bytes }));
+    try {
+      for (const file of allImageFiles) {
+        const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+        const ext =
+          file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/webp' ? 'webp' : 'png';
+        const name =
+          file.name && file.name.trim().length > 0 ? file.name : `pasted-screenshot.${ext}`;
+        savedFiles.push(await window.codesign.savePastedImage({ name, bytes }));
+      }
+      addInputFiles(savedFiles);
+      pushToast({
+        variant: 'success',
+        title: t('sidebar.chat.paste.attachedTitle'),
+        description: t('sidebar.chat.paste.attachedDescription', { count: savedFiles.length }),
+      });
+    } catch (error) {
+      pushToast({
+        variant: 'error',
+        title: t('sidebar.chat.paste.failedTitle'),
+        description:
+          error instanceof Error ? error.message : t('sidebar.chat.paste.failedDescription'),
+      });
     }
-    addInputFiles(savedFiles);
   }
 
   return (
@@ -209,46 +357,33 @@ export function Sidebar({ prompt, setPrompt, onSubmit }: SidebarProps) {
                       (candidate) => candidate.path === file.path,
                     );
                     return (
-                      <span
+                      <AttachmentChip
                         key={file.path}
-                        className="inline-flex max-w-full items-center gap-[6px] rounded-full border border-[var(--color-border)] bg-[var(--color-background-secondary)] px-[10px] py-[5px] text-[11px] text-[var(--color-text-secondary)]"
-                        title={file.path}
-                      >
-                        <ContextIcon icon="file" />
-                        <span className="truncate max-w-[180px]">{file.name}</span>
-                        {isCanvasImport ? (
-                          <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
-                            {t('canvas.canvasTab')}
-                          </span>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() =>
-                            isCanvasImport
-                              ? removeCanvasImportedFile(file.path)
-                              : removeInputFile(file.path)
-                          }
-                          aria-label={t('sidebar.removeFile', { name: file.name })}
-                          className="inline-flex items-center justify-center rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
-                        >
-                          <X className="w-3 h-3" aria-hidden />
-                        </button>
-                      </span>
+                        file={file}
+                        isCanvasImport={isCanvasImport}
+                        canvasLabel={t('canvas.canvasTab')}
+                        removeLabel={t('sidebar.removeFile', { name: file.name })}
+                        onRemove={() =>
+                          isCanvasImport
+                            ? removeCanvasImportedFile(file.path)
+                            : removeInputFile(file.path)
+                        }
+                      />
                     );
                   })}
                   {hasCanvasContext ? (
                     <span
                       className="inline-flex max-w-full items-center gap-[6px] rounded-full border border-[var(--color-border)] bg-[var(--color-background-secondary)] px-[10px] py-[5px] text-[11px] text-[var(--color-text-secondary)]"
                       title={
-                        canvasWillBeSent
-                          ? t('canvas.contextReady')
-                          : t('canvas.contextUpToDate')
+                        canvasWillBeSent ? t('canvas.contextReady') : t('canvas.contextUpToDate')
                       }
                     >
                       <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
                         {t('canvas.canvasTab')}
                       </span>
-                      <span>{canvasWillBeSent ? t('canvas.contextReady') : t('canvas.contextUpToDate')}</span>
+                      <span>
+                        {canvasWillBeSent ? t('canvas.contextReady') : t('canvas.contextUpToDate')}
+                      </span>
                     </span>
                   ) : null}
                   {referenceUrl.trim() ? (

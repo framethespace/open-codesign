@@ -1,4 +1,4 @@
-import { exportToSvg, getNonDeletedElements } from '@excalidraw/excalidraw';
+import { exportToBlob, exportToSvg, getNonDeletedElements } from '@excalidraw/excalidraw';
 import type {
   ExcalidrawElement,
   ExcalidrawFrameLikeElement,
@@ -17,6 +17,7 @@ export interface CanvasSceneSnapshot {
 export interface CanvasContextArtifact {
   name: string;
   content: string;
+  encoding?: 'utf8' | 'base64';
 }
 
 const MAX_FRAME_EXPORTS = 4;
@@ -43,6 +44,34 @@ function describeElement(element: ExcalidrawElement): string {
     parts.push('image');
   }
   return parts.join(' | ');
+}
+
+function buildExportOptions(
+  scene: CanvasSceneSnapshot,
+  exportingFrame?: ExcalidrawFrameLikeElement,
+) {
+  return {
+    elements: getNonDeletedElements(scene.elements),
+    appState: {
+      exportBackground: true,
+      exportWithDarkMode: false,
+      viewBackgroundColor: '#ffffff',
+      ...scene.appState,
+    },
+    files: scene.files,
+    exportingFrame: exportingFrame ?? null,
+  };
+}
+
+function encodeBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
 }
 
 function buildSummary(scene: CanvasSceneSnapshot): string {
@@ -95,20 +124,26 @@ async function exportSvg(
   scene: CanvasSceneSnapshot,
   exportingFrame?: ExcalidrawFrameLikeElement,
 ): Promise<CanvasContextArtifact> {
-  const svg = await exportToSvg({
-    elements: getNonDeletedElements(scene.elements),
-    appState: {
-      exportBackground: true,
-      exportWithDarkMode: false,
-      viewBackgroundColor: '#ffffff',
-      ...scene.appState,
-    },
-    files: scene.files,
-    exportingFrame: exportingFrame ?? null,
-  });
+  const svg = await exportToSvg(buildExportOptions(scene, exportingFrame));
   return {
     name,
     content: sanitizeSvg(svg.outerHTML),
+  };
+}
+
+async function exportPng(
+  name: string,
+  scene: CanvasSceneSnapshot,
+  exportingFrame?: ExcalidrawFrameLikeElement,
+): Promise<CanvasContextArtifact> {
+  const blob = await exportToBlob({
+    ...buildExportOptions(scene, exportingFrame),
+    mimeType: 'image/png',
+  });
+  return {
+    name,
+    content: encodeBase64(await blob.arrayBuffer()),
+    encoding: 'base64',
   };
 }
 
@@ -135,14 +170,22 @@ export async function buildCanvasContextArtifacts(
   );
 
   if (frames.length > 0) {
-    const frameExports = await Promise.all(
+    const framePngExports = await Promise.all(
+      frames
+        .slice(0, MAX_FRAME_EXPORTS)
+        .map((frame, index) => exportPng(`canvas-frame-${index + 1}.png`, safeScene, frame)),
+    );
+    const frameSvgExports = await Promise.all(
       frames
         .slice(0, MAX_FRAME_EXPORTS)
         .map((frame, index) => exportSvg(`canvas-frame-${index + 1}.svg`, safeScene, frame)),
     );
-    artifacts.push(...frameExports);
+    artifacts.push(...framePngExports, ...frameSvgExports);
   } else {
-    artifacts.push(await exportSvg('canvas.svg', safeScene));
+    artifacts.push(
+      await exportPng('canvas.png', safeScene),
+      await exportSvg('canvas.svg', safeScene),
+    );
   }
 
   return artifacts;

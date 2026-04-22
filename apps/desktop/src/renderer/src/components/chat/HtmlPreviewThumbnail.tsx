@@ -9,7 +9,7 @@ async function loadThumbnail(html: string): Promise<PreviewThumbnail | null> {
   if (cached !== undefined) return cached;
   const pending = pendingCache.get(html);
   if (pending) return pending;
-  const next = window.codesign?.capturePreviewThumbnail(html) ?? Promise.resolve(null);
+  const next = window.codesign?.capturePreviewThumbnail?.(html) ?? Promise.resolve(null);
   pendingCache.set(html, next);
   try {
     const resolved = await next;
@@ -48,14 +48,16 @@ export function HtmlPreviewThumbnail({
   if (!html) return null;
 
   return (
-    <div className="relative h-[72px] w-[112px] overflow-hidden rounded-[12px] border border-[var(--color-border-muted)] bg-[linear-gradient(135deg,var(--color-background-secondary),var(--color-surface))] shadow-[0_8px_24px_rgba(15,23,42,0.08)] shrink-0">
+    <div className="relative h-[96px] w-[144px] overflow-hidden rounded-[12px] border border-[var(--color-border-muted)] bg-[linear-gradient(135deg,var(--color-background-secondary),var(--color-surface))] shadow-[0_8px_24px_rgba(15,23,42,0.08)] shrink-0">
       {thumb ? (
-        <img
-          src={thumb.dataUrl}
-          alt={alt}
-          className="h-full w-full object-cover object-top"
-          loading="lazy"
-        />
+        <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.9),transparent_60%),linear-gradient(135deg,var(--color-background-secondary),var(--color-surface))] p-[8px]">
+          <img
+            src={thumb.dataUrl}
+            alt={alt}
+            className="max-h-full max-w-full rounded-[8px] object-contain shadow-[0_10px_24px_rgba(15,23,42,0.12)]"
+            loading="lazy"
+          />
+        </div>
       ) : (
         <div
           className="h-full w-full animate-pulse bg-[linear-gradient(135deg,var(--color-background-secondary),var(--color-surface))]"

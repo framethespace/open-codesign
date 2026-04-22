@@ -70,10 +70,17 @@ export interface ChatAppendInput {
 }
 
 // Payload shapes (not strictly validated — payload is opaque JSON in DB).
+export interface ChatContextPreview {
+  kind: 'canvas';
+  path: string;
+  label: string;
+}
+
 export interface ChatUserPayload {
   text: string;
   attachedSkills?: string[];
   contextBadges?: string[];
+  contextPreviews?: ChatContextPreview[];
 }
 export interface ChatAssistantTextPayload {
   text: string;

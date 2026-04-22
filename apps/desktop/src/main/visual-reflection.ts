@@ -1,8 +1,13 @@
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { buildSrcdoc } from '@open-codesign/runtime';
 import { BrowserWindow } from './electron-runtime';
+import { getLogger } from './logger';
 
 const CAPTURE_TIMEOUT_MS = 4500;
-const SETTLE_AFTER_LOAD_MS = 900;
+const SETTLE_AFTER_LOAD_MS = 1400;
+const log = getLogger('main:visual-reflection');
 
 export interface ReflectionCaptureResult {
   data: string;
@@ -15,7 +20,11 @@ export async function captureArtifactScreenshot(
   artifactSource: string,
 ): Promise<ReflectionCaptureResult | null> {
   const srcdoc = buildSrcdoc(artifactSource);
-  const dataUrl = `data:text/html;base64,${Buffer.from(srcdoc, 'utf8').toString('base64')}`;
+  const captureDir = join(tmpdir(), 'open-codesign-captures');
+  const filePath = join(
+    captureDir,
+    `capture-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.html`,
+  );
 
   const width = 1280;
   const height = 900;
@@ -23,6 +32,7 @@ export async function captureArtifactScreenshot(
     show: false,
     width,
     height,
+    backgroundColor: '#ffffff',
     webPreferences: {
       sandbox: true,
       nodeIntegration: false,
@@ -32,6 +42,9 @@ export async function captureArtifactScreenshot(
   });
 
   try {
+    await mkdir(captureDir, { recursive: true });
+    await writeFile(filePath, srcdoc, 'utf8');
+
     const wc = win.webContents as unknown as {
       once: (event: string, listener: (...args: unknown[]) => void) => void;
     };
@@ -57,7 +70,7 @@ export async function captureArtifactScreenshot(
         clearTimeout(timeout);
         finish(new Error(`did-fail-load (${String(errorCode)}): ${String(errorDescription)}`));
       });
-      void win.loadURL(dataUrl).catch((err: unknown) => {
+      void win.loadFile(filePath).catch((err: unknown) => {
         clearTimeout(timeout);
         finish(err instanceof Error ? err : new Error(String(err)));
       });
@@ -69,11 +82,18 @@ export async function captureArtifactScreenshot(
       width,
       height,
     };
-  } catch {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.warn('capture.fail', { message });
     return null;
   } finally {
     try {
       if (!win.isDestroyed()) win.destroy();
+    } catch {
+      /* noop */
+    }
+    try {
+      await unlink(filePath);
     } catch {
       /* noop */
     }

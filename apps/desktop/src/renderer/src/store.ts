@@ -132,6 +132,17 @@ interface PersistedCanvasState {
   files: BinaryFiles;
 }
 
+function isCanvasContextPreviewFile(file: LocalInputFile): boolean {
+  return file.name === 'canvas.png' || /^canvas-frame-\d+\.png$/i.test(file.name);
+}
+
+function getCanvasContextPreviewLabel(name: string): string {
+  if (name === 'canvas.png') return tr('canvas.contextPreviewFull');
+  const frameMatch = name.match(/^canvas-frame-(\d+)\.png$/i);
+  if (!frameMatch) return tr('canvas.contextBadge');
+  return tr('canvas.contextPreviewFrame', { count: Number(frameMatch[1]) });
+}
+
 // Pure reducers, exported for unit tests so we don't need RTL for slice logic.
 export function openFileTab(tabs: CanvasTab[], path: string): { tabs: CanvasTab[]; index: number } {
   const existing = tabs.findIndex((t) => t.kind === 'file' && t.path === path);
@@ -1586,9 +1597,18 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
     ]);
     const mergedAttachments = uniqueFiles([
       ...request.attachments,
-      ...(shouldIncludeCanvasContext ? canvasImportedFilesAtSend : []),
       ...canvasContextFiles,
+      ...(shouldIncludeCanvasContext ? canvasImportedFilesAtSend : []),
     ]).slice(0, 12);
+    const sentCanvasContextPreviews = canvasContextFiles
+      .filter(isCanvasContextPreviewFile)
+      .filter((file) => mergedAttachments.some((attachment) => attachment.path === file.path))
+      .slice(0, 3)
+      .map((file) => ({
+        kind: 'canvas' as const,
+        path: file.path,
+        label: getCanvasContextPreviewLabel(file.name),
+      }));
 
     const enrichedPrompt = buildEnrichedPrompt(request.prompt, pendingEdits);
     const pendingEditIds = pendingEdits.map((c) => c.id);
@@ -1617,8 +1637,9 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
         kind: 'user',
         payload: {
           text: request.prompt,
-          ...(shouldIncludeCanvasContext
-            ? { contextBadges: [tr('canvas.contextBadge')] }
+          ...(shouldIncludeCanvasContext ? { contextBadges: [tr('canvas.contextBadge')] } : {}),
+          ...(sentCanvasContextPreviews.length > 0
+            ? { contextPreviews: sentCanvasContextPreviews }
             : {}),
         },
       });

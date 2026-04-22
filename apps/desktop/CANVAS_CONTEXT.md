@@ -20,8 +20,8 @@ the model to build or edit the UI.
 Before generation, the store converts the current scene into prompt attachments:
 
 - `canvas-summary.md` with a compact summary of visible elements and labels
-- one `canvas.svg` export for the whole scene, or
-- up to four frame-specific SVG exports when Excalidraw frames are present
+- one `canvas.png` and one `canvas.svg` export for the whole scene, or
+- up to four frame-specific `canvas-frame-*.png` and `canvas-frame-*.svg` exports when Excalidraw frames are present
 
 These artifacts are written to a temp directory and attached automatically when
 the canvas contains visible content.
@@ -29,9 +29,11 @@ the canvas contains visible content.
 ## Current Limitation
 
 The current generation pipeline is still text-first. In practice that means the
-model receives SVG and markdown artifacts derived from the Excalidraw scene,
-plus any imported source images, rather than true bitmap-vision analysis of the
-canvas itself.
+model receives markdown plus exported scene assets, and imported source images
+are forwarded as binary attachments rather than OCR-style text dumps. The app
+can also attach a captured preview screenshot for review-oriented follow-up
+prompts, but the canvas pipeline is still export-based rather than full
+interactive scene understanding.
 
 ## Testing Note
 

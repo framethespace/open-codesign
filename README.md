@@ -35,7 +35,7 @@ core Open CoDesign experience, so they stay separate from the baseline repo
 feature list below.
 
 - **Pinned `Canvas` tab with full Excalidraw UI** — sketch wireframes, widgets, motion notes, and layout ideas directly in the app before the first generation
-- **Canvas-to-model context export** — the canvas is packaged into prompt context automatically as a summary plus SVG exports, with frame-aware exports when the scene is too large
+- **Canvas-to-model context export** — the canvas is packaged into prompt context automatically as a summary plus PNG/SVG exports, with frame-aware exports when frames are present
 - **Imported canvas images are sent separately too** — reference images dropped into the canvas also show up as standalone chat attachments for clearer model context
 - **Visible send confirmation** — the composer and chat now show when canvas context was actually included, so you can confirm it at a glance
 - **Canvas autosave and save-on-submit** — rough sketches are persisted per design, with an extra flush when you send a prompt
@@ -232,7 +232,9 @@ Add a `SKILL.md` to any project to teach the model your own taste.
 - **Top-bar usage badge** — see context-window usage, token totals, and USD cost for the latest run beside the model selector
 - **Automatic checklist continuation** — unfinished agent todo lists can continue automatically with one silent follow-up; disable it anytime in Advanced settings
 - **Visual self-review** — after the first render, Open CoDesign can capture the live preview as an image and feed it back into the same agent for one screenshot-based refinement pass
+- **Review prompts get the latest preview screenshot** — prompts like "review", "what changed", or "does this look right?" can attach the last rendered UI as an image so the same agent can inspect the current result directly
 - **Toggleable taste controls** — enable or disable visual self-review, the anti-slop skill, and the Uncodixfy-inspired cleanup skill in Advanced settings
+- **Binary image attachments stay binary** — image-style attachments now use a larger size cap and are passed by filename/image context instead of being treated like text excerpts
 - **Settings with five tabs** — Models, Appearance, Storage, Diagnostics, and Advanced
 - **Light + dark themes**, **EN + 简体中文 UI** with live toggle
 

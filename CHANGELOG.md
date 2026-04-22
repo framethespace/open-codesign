@@ -9,6 +9,7 @@ All notable changes to Open CoDesign are documented here. Format: [Keep a Change
 - **Top-bar usage badge** — the desktop app now shows per-run context-window usage, token totals, and provider cost in USD next to the model picker, with a hover panel for the full breakdown.
 - **Automatic checklist continuation** — if an agent run ends with unchecked `set_todos` items, Open CoDesign can now send one silent follow-up to finish the remaining work. This is enabled by default and can be turned off in Settings → Advanced.
 - **Visual self-review pass** — the desktop app can now render the current preview off-screen, capture it as an image, and feed that screenshot back into the same agent for one extra refinement pass.
+- **Review screenshot prompts** — prompts like "review", "verify", or "what changed" can now attach the last rendered preview screenshot to the next agent turn automatically.
 - **Toggleable taste controls** — Settings → Advanced now includes switches for visual self-review, the built-in anti-slop design skill, and an optional Uncodixfy-inspired cleanup skill.
 - **Clipboard screenshot attachments** — pasting an image into the chat composer now stores it as a normal local attachment and includes it in the next prompt.
 
@@ -18,6 +19,7 @@ All notable changes to Open CoDesign are documented here. Format: [Keep a Change
 - **Usage persistence** — the latest usage snapshot is now stored per design, so renderer reloads and preview crashes no longer wipe the visible usage badge.
 - **Live tweak updates** — the tweak panel now updates both JSX previews and HTML edit-mode previews immediately, so slider/token changes stay in sync with the visible UI.
 - **Chat preview visibility** — `view index.html` and delivered-artifact rows in the sidebar chat now show a miniature live UI thumbnail, making it much clearer what the model actually read and produced.
+- **Binary attachment handling** — image-style attachments such as `canvas.png` now use a larger binary limit instead of the old text-attachment cap, while text-like files still keep the tighter excerpt-oriented limit.
 
 ## [0.1.1] — 2026-04-21
 

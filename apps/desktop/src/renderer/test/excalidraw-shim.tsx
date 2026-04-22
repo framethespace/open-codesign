@@ -61,3 +61,14 @@ export async function exportToSvg(input: {
     outerHTML: `<svg data-excalidraw-shim="true" data-elements="${input.elements.length}" data-background="${background}"${frameLabel}></svg>`,
   };
 }
+
+export async function exportToBlob(input: {
+  elements: readonly ExcalidrawElementLike[];
+  exportingFrame?: ExcalidrawElementLike | null;
+  mimeType?: string;
+}) {
+  const frameLabel = input.exportingFrame?.type ? `:${input.exportingFrame.type}` : '';
+  return new Blob([`shim-export:${input.elements.length}${frameLabel}`], {
+    type: input.mimeType ?? 'image/png',
+  });
+}

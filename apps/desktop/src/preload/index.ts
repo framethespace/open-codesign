@@ -244,6 +244,8 @@ const api = {
       'codesign:v1:save-clipboard-image',
       input ?? {},
     ) as Promise<LocalInputFile | null>,
+  readLocalImageDataUrl: (input: { path: string }) =>
+    ipcRenderer.invoke('codesign:v1:read-local-image-data-url', input) as Promise<string | null>,
   pickDesignSystemDirectory: () =>
     ipcRenderer.invoke('codesign:pick-design-system-directory') as Promise<OnboardingState>,
   clearDesignSystem: () =>

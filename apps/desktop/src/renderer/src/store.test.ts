@@ -324,10 +324,27 @@ describe('useCodesignStore canvas context attachments', () => {
       createdAt: new Date().toISOString(),
       schemaVersion: 1,
     }));
-    const generate = vi.fn(async (payload: { attachments: Array<{ path: string; name: string }> }) => ({
-      artifacts: [],
-      message: 'done',
-    }));
+    const writeContextFiles = vi.fn(
+      async (input: { files: Array<{ name: string; encoding?: string }> }) => {
+        expect(input.files).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: 'canvas-summary.md' }),
+            expect.objectContaining({ name: 'canvas.png', encoding: 'base64' }),
+            expect.objectContaining({ name: 'canvas.svg' }),
+          ]),
+        );
+        return [
+          canvasInputFile('/tmp/canvas.png', 'canvas.png'),
+          canvasInputFile('/tmp/canvas.svg', 'canvas.svg'),
+        ];
+      },
+    );
+    const generate = vi.fn(
+      async (payload: { attachments: Array<{ path: string; name: string }> }) => ({
+        artifacts: [],
+        message: 'done',
+      }),
+    );
 
     vi.stubGlobal('window', {
       codesign: {
@@ -339,7 +356,7 @@ describe('useCodesignStore canvas context attachments', () => {
         },
         canvas: {
           saveState: vi.fn(async () => ({ ok: true })),
-          writeContextFiles: vi.fn(async () => [canvasInputFile('/tmp/canvas.svg', 'canvas.svg')]),
+          writeContextFiles,
         },
       },
       setTimeout,
@@ -364,6 +381,13 @@ describe('useCodesignStore canvas context attachments', () => {
         payload: expect.objectContaining({
           text: 'use the canvas',
           contextBadges: ['Canvas context'],
+          contextPreviews: [
+            {
+              kind: 'canvas',
+              path: '/tmp/canvas.png',
+              label: 'Full canvas',
+            },
+          ],
         }),
       }),
     );
@@ -371,10 +395,12 @@ describe('useCodesignStore canvas context attachments', () => {
       expect.objectContaining({
         attachments: expect.arrayContaining([
           expect.objectContaining({ name: 'ref.png' }),
+          expect.objectContaining({ name: 'canvas.png' }),
           expect.objectContaining({ name: 'canvas.svg' }),
         ]),
       }),
     );
+    expect(writeContextFiles).toHaveBeenCalledTimes(1);
     expect(useCodesignStore.getState().lastGeneratedCanvasRevision).toBe(2);
   });
 
@@ -389,7 +415,7 @@ describe('useCodesignStore canvas context attachments', () => {
       createdAt: new Date().toISOString(),
       schemaVersion: 1,
     }));
-    const writeContextFiles = vi.fn(async () => [canvasInputFile('/tmp/canvas.svg', 'canvas.svg')]);
+    const writeContextFiles = vi.fn(async () => [canvasInputFile('/tmp/canvas.png', 'canvas.png')]);
     const generate = vi.fn(async () => ({ artifacts: [], message: 'done' }));
 
     vi.stubGlobal('window', {
