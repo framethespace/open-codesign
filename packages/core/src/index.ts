@@ -332,6 +332,8 @@ async function runModel(input: ModelRunInput): Promise<GenerateOutput> {
         },
         {
           ...(input.onRetry !== undefined ? { onRetry: input.onRetry } : {}),
+          logger: log,
+          provider: input.model.provider,
         },
         complete,
       );
