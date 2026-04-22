@@ -1,7 +1,7 @@
 import { useT } from '@open-codesign/i18n';
 import type { LocalInputFile, OnboardingState } from '@open-codesign/shared';
 import { FolderOpen, Link2, Paperclip, X } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { type ClipboardEvent, useEffect, useRef } from 'react';
 import { useAgentStream } from '../hooks/useAgentStream';
 import { useCodesignStore } from '../store';
 import { ModelSwitcher } from './ModelSwitcher';
@@ -89,6 +89,7 @@ export function Sidebar({ prompt, setPrompt, onSubmit }: SidebarProps) {
   const referenceUrl = useCodesignStore((s) => s.referenceUrl);
   const setReferenceUrl = useCodesignStore((s) => s.setReferenceUrl);
   const pickInputFiles = useCodesignStore((s) => s.pickInputFiles);
+  const addInputFiles = useCodesignStore((s) => s.addInputFiles);
   const removeInputFile = useCodesignStore((s) => s.removeInputFile);
   const removeCanvasImportedFile = useCodesignStore((s) => s.removeCanvasImportedFile);
   const pickDesignSystemDirectory = useCodesignStore((s) => s.pickDesignSystemDirectory);
@@ -141,6 +142,26 @@ export function Sidebar({ prompt, setPrompt, onSubmit }: SidebarProps) {
     config?.hasKey && config.modelPrimary ? config.modelPrimary : t('sidebar.chat.noModel');
   const lastTokens = lastUsage ? lastUsage.inputTokens + lastUsage.outputTokens : null;
 
+  async function handlePromptPaste(event: ClipboardEvent<HTMLTextAreaElement>): Promise<void> {
+    const items = Array.from(event.clipboardData.items ?? []);
+    const imageFiles = items
+      .filter((item) => item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (imageFiles.length === 0 || !window.codesign?.savePastedImage) return;
+    event.preventDefault();
+    const savedFiles: LocalInputFile[] = [];
+    for (const file of imageFiles) {
+      const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+      const ext =
+        file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/webp' ? 'webp' : 'png';
+      const name =
+        file.name && file.name.trim().length > 0 ? file.name : `pasted-screenshot.${ext}`;
+      savedFiles.push(await window.codesign.savePastedImage({ name, bytes }));
+    }
+    addInputFiles(savedFiles);
+  }
+
   return (
     <aside
       className="flex flex-col h-full overflow-x-hidden border-r border-[var(--color-border)] bg-[var(--color-background-secondary)]"
@@ -177,6 +198,9 @@ export function Sidebar({ prompt, setPrompt, onSubmit }: SidebarProps) {
             onSubmit={onSubmit}
             onCancel={cancelGeneration}
             isGenerating={isGenerating}
+            onPaste={(event) => {
+              void handlePromptPaste(event);
+            }}
             contextSummary={
               contextItems.length > 0 ? (
                 <div className="flex flex-wrap gap-[8px]">

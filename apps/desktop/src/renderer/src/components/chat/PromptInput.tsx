@@ -2,6 +2,7 @@ import { useT } from '@open-codesign/i18n';
 import { Tooltip } from '@open-codesign/ui';
 import { ArrowUp, Square } from 'lucide-react';
 import {
+  type ClipboardEvent,
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
@@ -43,6 +44,7 @@ export interface PromptInputProps {
   contextSummary?: ReactNode;
   /** Optional element rendered inside the textarea container, bottom-left. */
   leadingAction?: ReactNode;
+  onPaste?: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
 }
 
 export interface PromptInputHandle {
@@ -59,7 +61,16 @@ export interface PromptInputHandle {
  *   Shift+Enter     — newline
  */
 export const PromptInput = forwardRef<PromptInputHandle, PromptInputProps>(function PromptInput(
-  { prompt, setPrompt, onSubmit, onCancel, isGenerating, contextSummary, leadingAction },
+  {
+    prompt,
+    setPrompt,
+    onSubmit,
+    onCancel,
+    isGenerating,
+    contextSummary,
+    leadingAction,
+    onPaste,
+  },
   ref,
 ) {
   const t = useT();
@@ -153,6 +164,7 @@ export const PromptInput = forwardRef<PromptInputHandle, PromptInputProps>(funct
             resizeTextarea(e.currentTarget);
           }}
           onKeyDown={handleKeyDown}
+          onPaste={onPaste}
           placeholder={t('chat.placeholderRich')}
           rows={1}
           className="codesign-prompt-textarea block w-full resize-none bg-transparent px-[14px] pt-[12px] pb-[44px] text-[14px] leading-[1.55] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none min-h-[24px] overflow-y-auto"

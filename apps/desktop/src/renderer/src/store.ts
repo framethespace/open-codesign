@@ -291,6 +291,7 @@ interface CodesignState {
   exportActive: (format: ExportFormat) => Promise<void>;
 
   pickInputFiles: () => Promise<void>;
+  addInputFiles: (files: LocalInputFile[]) => void;
   removeInputFile: (path: string) => void;
   clearInputFiles: () => void;
   setReferenceUrl: (value: string) => void;
@@ -1312,6 +1313,11 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
   async pickInputFiles() {
     if (!window.codesign) return;
     const files = await window.codesign.pickInputFiles();
+    if (files.length === 0) return;
+    set((s) => ({ inputFiles: uniqueFiles([...s.inputFiles, ...files]) }));
+  },
+
+  addInputFiles(files) {
     if (files.length === 0) return;
     set((s) => ({ inputFiles: uniqueFiles([...s.inputFiles, ...files]) }));
   },

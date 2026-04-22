@@ -219,6 +219,7 @@ Add a `SKILL.md` to any project to teach the model your own taste.
 - **Fifteen built-in demos + twelve design skill modules** — ready-to-edit starting points for common design briefs
 - **Live agent panel** — watch tool calls stream in real time as the model edits files
 - **AI-generated sliders** — the model emits the parameters worth tweaking (color, spacing, font)
+- **Paste screenshots into chat** — paste an image straight into the prompt box and it becomes a normal attachment for the next generation
 - **Comment mode** — click any element in the preview to drop a pin, leave a note, and let the model rewrite only that region
 - **Generation cancellation** — stop mid-stream without losing prior turns
 

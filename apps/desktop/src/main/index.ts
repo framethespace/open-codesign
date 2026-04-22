@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -20,6 +20,7 @@ import {
   CodesignError,
   GeneratePayload,
   GeneratePayloadV1,
+  LocalInputFile,
 } from '@open-codesign/shared';
 import { computeFingerprint } from '@open-codesign/shared/fingerprint';
 import type BetterSqlite3 from 'better-sqlite3';
@@ -511,6 +512,38 @@ function registerIpcHandlers(db: Database | null): void {
       }),
     );
   });
+
+  ipcMain.handle(
+    'codesign:v1:save-pasted-image',
+    async (_e, raw: unknown): Promise<LocalInputFile> => {
+      if (typeof raw !== 'object' || raw === null) {
+        throw new CodesignError('save-pasted-image expects an object payload', 'IPC_BAD_INPUT');
+      }
+      const record = raw as Record<string, unknown>;
+      const bytes = record['bytes'];
+      if (!Array.isArray(bytes) || !bytes.every((value) => Number.isInteger(value))) {
+        throw new CodesignError('save-pasted-image requires integer bytes[]', 'IPC_BAD_INPUT');
+      }
+      const requestedName =
+        typeof record['name'] === 'string' && record['name'].trim().length > 0
+          ? record['name'].trim()
+          : 'pasted-screenshot.png';
+      const safeName = basename(requestedName).replace(/[^\w.\-]+/g, '-');
+      const dir = join(app.getPath('temp'), 'open-codesign-pasted-images');
+      mkdirSync(dir, { recursive: true });
+      const filePath = join(
+        dir,
+        `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`,
+      );
+      const buffer = Buffer.from(Uint8Array.from(bytes));
+      await writeFile(filePath, buffer);
+      return LocalInputFile.parse({
+        path: filePath,
+        name: safeName,
+        size: buffer.byteLength,
+      });
+    },
+  );
 
   ipcMain.handle('codesign:pick-design-system-directory', async () => {
     const result = mainWindow

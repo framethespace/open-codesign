@@ -261,6 +261,8 @@ const api = {
   }) => ipcRenderer.invoke('codesign:apply-comment', payload) as Promise<GenerateResponse>,
   pickInputFiles: () =>
     ipcRenderer.invoke('codesign:pick-input-files') as Promise<LocalInputFile[]>,
+  savePastedImage: (input: { name: string; bytes: number[] }) =>
+    ipcRenderer.invoke('codesign:v1:save-pasted-image', input) as Promise<LocalInputFile>,
   pickDesignSystemDirectory: () =>
     ipcRenderer.invoke('codesign:pick-design-system-directory') as Promise<OnboardingState>,
   clearDesignSystem: () =>

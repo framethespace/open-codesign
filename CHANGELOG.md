@@ -10,6 +10,7 @@ All notable changes to Open CoDesign are documented here. Format: [Keep a Change
 - **Automatic checklist continuation** — if an agent run ends with unchecked `set_todos` items, Open CoDesign can now send one silent follow-up to finish the remaining work. This is enabled by default and can be turned off in Settings → Advanced.
 - **Visual self-review pass** — the desktop app can now render the current preview off-screen, capture it as an image, and feed that screenshot back into the same agent for one extra refinement pass.
 - **Toggleable taste controls** — Settings → Advanced now includes switches for visual self-review, the built-in anti-slop design skill, and an optional Uncodixfy-inspired cleanup skill.
+- **Clipboard screenshot attachments** — pasting an image into the chat composer now stores it as a normal local attachment and includes it in the next prompt.
 
 ### Changed
 
