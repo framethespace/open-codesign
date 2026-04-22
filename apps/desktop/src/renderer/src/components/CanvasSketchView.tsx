@@ -3,7 +3,7 @@ import { Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw';
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types';
 import type { LocalInputFile } from '@open-codesign/shared';
 import type { ComponentProps } from 'react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useCodesignStore } from '../store';
 
 type AppState = Parameters<typeof serializeAsJSON>[1];
@@ -38,15 +38,14 @@ export function CanvasSketchView() {
     };
   }, []);
 
-  const initialData = useMemo(() => {
-    const canvasScene = useCodesignStore.getState().canvasScene;
-    if (!canvasScene) return null;
-    return {
-      elements: canvasScene.elements,
-      appState: canvasScene.appState,
-      files: canvasScene.files,
-    };
-  }, [canvasSeed, currentDesignId]);
+  const canvasScene = useCodesignStore.getState().canvasScene;
+  const initialData = canvasScene
+    ? {
+        elements: canvasScene.elements,
+        appState: canvasScene.appState,
+        files: canvasScene.files,
+      }
+    : null;
 
   if (!currentDesignId || !canvasSceneLoaded) {
     return (

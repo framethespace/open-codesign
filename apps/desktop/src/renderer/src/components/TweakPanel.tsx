@@ -15,6 +15,22 @@ type TokenValue = unknown;
 type Tokens = Record<string, TokenValue>;
 const TWEAKS_STORAGE_KEY = 'open-codesign:tweaks-by-design';
 
+export function postLiveTweakMessages(
+  win: Pick<Window, 'postMessage'> | null | undefined,
+  tokens: Tokens,
+): boolean {
+  if (!win) return false;
+  win.postMessage({ type: 'codesign:tweaks:update', tokens }, '*');
+  win.postMessage(
+    {
+      type: '__edit_mode_set_keys',
+      edits: Object.fromEntries(Object.entries(tokens).map(([key, value]) => [key, String(value)])),
+    },
+    '*',
+  );
+  return true;
+}
+
 interface PersistedTweakState {
   tokens: Tokens;
   schema: TweakSchema | null;
@@ -633,9 +649,7 @@ export function TweakPanel({
   const hasTokens = entries.length > 0;
 
   function postLive(tokens: Tokens): void {
-    const win = iframeRef.current?.contentWindow;
-    if (!win) return;
-    win.postMessage({ type: 'codesign:tweaks:update', tokens }, '*');
+    postLiveTweakMessages(iframeRef.current?.contentWindow, tokens);
   }
 
   function schedulePersist(tokens: Tokens): void {

@@ -15,6 +15,7 @@ All notable changes to Open CoDesign are documented here. Format: [Keep a Change
 
 - **Preview fallback behavior** — malformed JSX/HTML artifacts no longer replace the last good preview during live updates or final snapshot writes. The canvas keeps the last valid render when possible and shows a clearer invalid-artifact state when there is no good fallback.
 - **Usage persistence** — the latest usage snapshot is now stored per design, so renderer reloads and preview crashes no longer wipe the visible usage badge.
+- **Live tweak updates** — the tweak panel now updates both JSX previews and HTML edit-mode previews immediately, so slider/token changes stay in sync with the visible UI.
 
 ## [0.1.1] — 2026-04-21
 

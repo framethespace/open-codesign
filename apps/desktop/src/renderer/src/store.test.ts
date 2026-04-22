@@ -19,7 +19,8 @@ function createStorageMock(initial: Record<string, string> = {}) {
   const store = new Map(Object.entries(initial));
   return {
     getItem(key: string) {
-      return store.has(key) ? store.get(key)! : null;
+      if (!store.has(key)) return null;
+      return store.get(key) ?? null;
     },
     setItem(key: string, value: string) {
       store.set(key, value);
