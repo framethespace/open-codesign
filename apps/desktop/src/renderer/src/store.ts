@@ -1,3 +1,5 @@
+import { restore, serializeAsJSON } from '@excalidraw/excalidraw';
+import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types';
 import { i18n } from '@open-codesign/i18n';
 import type {
   ChatAppendInput,
@@ -21,7 +23,12 @@ import { create } from 'zustand';
 import type { StoreApi } from 'zustand';
 import type { CodesignApi, ExportFormat } from '../../preload/index';
 import { recordAction, snapshotTimeline } from './lib/action-timeline';
+import { buildCanvasContextArtifacts, hasCanvasContent } from './lib/canvasContext';
 import { rendererLogger } from './lib/renderer-logger';
+
+type RestoredScene = ReturnType<typeof restore>;
+type ExcalidrawAppState = RestoredScene['appState'];
+type BinaryFiles = RestoredScene['files'];
 
 declare global {
   interface Window {
@@ -86,9 +93,16 @@ export type PreviewViewport = 'desktop' | 'tablet' | 'mobile';
 // 'files' is the pinned tab that hosts the file list + inline preview; 'file'
 // tabs wrap a single file preview opened by double-clicking the list. Closing
 // a 'file' tab is purely UI state — it does NOT delete anything.
-export type CanvasTab = { kind: 'files' } | { kind: 'file'; path: string };
+export type CanvasTab = { kind: 'files' } | { kind: 'canvas' } | { kind: 'file'; path: string };
 
 export const FILES_TAB: CanvasTab = { kind: 'files' };
+export const CANVAS_TAB: CanvasTab = { kind: 'canvas' };
+
+interface PersistedCanvasState {
+  elements: readonly ExcalidrawElement[];
+  appState: Partial<ExcalidrawAppState>;
+  files: BinaryFiles;
+}
 
 // Pure reducers, exported for unit tests so we don't need RTL for slice logic.
 export function openFileTab(tabs: CanvasTab[], path: string): { tabs: CanvasTab[]; index: number } {
@@ -105,8 +119,8 @@ export function closeTabAt(
 ): { tabs: CanvasTab[]; activeIndex: number } {
   const tab = tabs[target];
   if (!tab) return { tabs, activeIndex };
-  // The pinned 'files' tab cannot be closed — it always anchors index 0.
-  if (tab.kind === 'files') return { tabs, activeIndex };
+  // The pinned 'files' and 'canvas' tabs cannot be closed.
+  if (tab.kind === 'files' || tab.kind === 'canvas') return { tabs, activeIndex };
   const next = tabs.filter((_, i) => i !== target);
   let nextActive = activeIndex;
   if (activeIndex === target) {
@@ -206,6 +220,10 @@ interface CodesignState {
   // Workstream G — canvas file tabs
   canvasTabs: CanvasTab[];
   activeCanvasTab: number;
+  canvasScene: PersistedCanvasState | null;
+  canvasImportedFiles: LocalInputFile[];
+  canvasSceneLoaded: boolean;
+  canvasSeed: number;
 
   // PR4 — diagnostics slice. Pull-based: Diagnostics panel + error UI call
   // `refreshDiagnosticEvents` on mount / when a failure surfaces. No polling.
@@ -390,6 +408,19 @@ interface CodesignState {
   closeCanvasTab: (index: number) => void;
   setActiveCanvasTab: (index: number) => void;
   resetCanvasTabs: () => void;
+  loadCanvasStateForCurrentDesign: () => Promise<void>;
+  updateCanvasScene: (input: {
+    elements: readonly ExcalidrawElement[];
+    appState: Partial<ExcalidrawAppState>;
+    files: BinaryFiles;
+  }) => void;
+  persistCanvasState: (
+    sceneJson: string | null,
+    importedFiles?: LocalInputFile[] | undefined,
+  ) => Promise<void>;
+  addCanvasImportedFile: (file: LocalInputFile) => void;
+  removeCanvasImportedFile: (path: string) => void;
+  buildCanvasContextFiles: () => Promise<LocalInputFile[]>;
 }
 
 export interface CommentBubbleAnchor {
@@ -556,6 +587,28 @@ function uniqueFiles(files: LocalInputFile[]): LocalInputFile[] {
     result.push(file);
   }
   return result;
+}
+
+function parseCanvasScene(sceneJson: string | null): PersistedCanvasState | null {
+  if (!sceneJson || sceneJson.trim().length === 0) return null;
+  try {
+    const restored = restore(
+      JSON.parse(sceneJson) as {
+        appState?: Partial<ExcalidrawAppState>;
+        elements?: readonly ExcalidrawElement[];
+        files?: BinaryFiles;
+      },
+      null,
+      null,
+    );
+    return {
+      elements: restored.elements,
+      appState: restored.appState,
+      files: restored.files,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function tr(key: string, options?: Record<string, unknown>): string {
@@ -847,7 +900,9 @@ function applyGenerateSuccess(
 ): void {
   const firstArtifact = result.artifacts[0];
   const nextArtifactContent = firstArtifact?.content;
-  const previewableArtifact = isPreviewableArtifact(nextArtifactContent) ? nextArtifactContent : null;
+  const previewableArtifact = isPreviewableArtifact(nextArtifactContent)
+    ? nextArtifactContent
+    : null;
   const assistantMessage = result.message || tr('common.done');
   const { usage, rejected: rejectedUsageFields } = coerceUsageSnapshot(result);
   let didApply = false;
@@ -1032,7 +1087,7 @@ function buildPromptRequest(
   const prompt = input.prompt.trim();
   if (!prompt) return null;
   const refUrl = normalizeReferenceUrl(input.referenceUrl ?? storeReferenceUrl);
-      return {
+  return {
     prompt,
     attachments: uniqueFiles(input.attachments ?? storeInputFiles),
     ...(refUrl ? { referenceUrl: refUrl } : {}),
@@ -1205,8 +1260,12 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
   currentSnapshotId: null,
   liveRects: {},
 
-  canvasTabs: [FILES_TAB],
-  activeCanvasTab: 0,
+  canvasTabs: [FILES_TAB, CANVAS_TAB],
+  activeCanvasTab: 1,
+  canvasScene: null,
+  canvasImportedFiles: [],
+  canvasSceneLoaded: false,
+  canvasSeed: 0,
 
   recentEvents: [],
   unreadErrorCount: 0,
@@ -1357,12 +1416,13 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
     );
     if (!request) return;
 
-    const enrichedPrompt = buildEnrichedPrompt(request.prompt, pendingEdits);
-    const pendingEditIds = pendingEdits.map((c) => c.id);
-
     const generationId = newId();
     const designIdAtStart = get().currentDesignId;
-    if (designIdAtStart && !input.silent && get().autoContinueIncompleteFired.has(designIdAtStart)) {
+    if (
+      designIdAtStart &&
+      !input.silent &&
+      get().autoContinueIncompleteFired.has(designIdAtStart)
+    ) {
       const nextFired = new Set(get().autoContinueIncompleteFired);
       nextFired.delete(designIdAtStart);
       set({ autoContinueIncompleteFired: nextFired });
@@ -1383,13 +1443,33 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
     // the current HTML via text_editor.view() when needed, so older prose in
     // history offers diminishing value and pushes us toward the token ceiling.
     const HISTORY_CAP = 12;
+    const canvasContextFilesPromise = get().buildCanvasContextFiles();
+    const fullHistoryPromise = buildHistoryFromChat(designIdAtStart);
+    const [canvasContextFiles, fullHistory] = await Promise.all([
+      canvasContextFilesPromise,
+      fullHistoryPromise,
+    ]);
+    const mergedAttachments = uniqueFiles([
+      ...request.attachments,
+      ...get().canvasImportedFiles,
+      ...canvasContextFiles,
+    ]).slice(0, 12);
+
+    const enrichedPrompt = buildEnrichedPrompt(request.prompt, pendingEdits);
+    const pendingEditIds = pendingEdits.map((c) => c.id);
     // chat_messages is the single source of truth for agent history. Fixes
     // the race where a broken session + "继续" made the agent see a stale or
     // empty history from a legacy mirror and drift off-task.
-    const fullHistory = await buildHistoryFromChat(designIdAtStart);
     const history =
       fullHistory.length > HISTORY_CAP ? fullHistory.slice(-HISTORY_CAP) : fullHistory;
     const isFirstPrompt = fullHistory.length === 0;
+
+    // Cancellation can land while we are still preparing attachments/history.
+    // Bail out before side effects or provider calls if this run is no longer
+    // the current generation.
+    if (get().activeGenerationId !== generationId) {
+      return;
+    }
 
     // Append to the new chat_messages table so Sidebar v2 reflects activity
     // even before Workstream B starts emitting streaming tool events. Silent
@@ -1425,7 +1505,7 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
           history,
           model: modelRef(cfg.provider, cfg.modelPrimary),
           ...(request.referenceUrl ? { referenceUrl: request.referenceUrl } : {}),
-          attachments: request.attachments,
+          attachments: mergedAttachments,
           generationId,
           ...(designIdAtStart ? { designId: designIdAtStart } : {}),
           ...(get().previewHtml ? { previousHtml: get().previewHtml as string } : {}),
@@ -1776,12 +1856,17 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
         commentsLoaded: false,
         commentBubble: null,
         currentSnapshotId: null,
-        canvasTabs: [FILES_TAB],
-        activeCanvasTab: 0,
+        canvasTabs: [FILES_TAB, CANVAS_TAB],
+        activeCanvasTab: 1,
+        canvasScene: null,
+        canvasImportedFiles: [],
+        canvasSceneLoaded: false,
+        canvasSeed: get().canvasSeed + 1,
       });
       await get().loadDesigns();
       void get().loadChatForCurrentDesign();
       void get().loadCommentsForCurrentDesign();
+      void get().loadCanvasStateForCurrentDesign();
       return design;
     } catch (err) {
       const msg = err instanceof Error ? err.message : tr('errors.unknown');
@@ -1845,11 +1930,16 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
         commentsLoaded: false,
         commentBubble: null,
         currentSnapshotId: null,
-        canvasTabs: [FILES_TAB, { kind: 'file', path: 'index.html' }],
-        activeCanvasTab: 1,
+        canvasTabs: [FILES_TAB, CANVAS_TAB, { kind: 'file', path: 'index.html' }],
+        activeCanvasTab: 2,
+        canvasScene: null,
+        canvasImportedFiles: [],
+        canvasSceneLoaded: false,
+        canvasSeed: get().canvasSeed + 1,
       });
       void get().loadChatForCurrentDesign();
       void get().loadCommentsForCurrentDesign();
+      void get().loadCanvasStateForCurrentDesign();
       void (async () => {
         try {
           const snapshots = await window.codesign?.snapshots.list(id);
@@ -1906,11 +1996,18 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
         commentsLoaded: false,
         commentBubble: null,
         currentSnapshotId: null,
-        canvasTabs: previewableHtml ? [FILES_TAB, { kind: 'file', path: 'index.html' }] : [FILES_TAB],
-        activeCanvasTab: previewableHtml ? 1 : 0,
+        canvasTabs: previewableHtml
+          ? [FILES_TAB, CANVAS_TAB, { kind: 'file', path: 'index.html' }]
+          : [FILES_TAB, CANVAS_TAB],
+        activeCanvasTab: previewableHtml ? 2 : 1,
+        canvasScene: null,
+        canvasImportedFiles: [],
+        canvasSceneLoaded: false,
+        canvasSeed: get().canvasSeed + 1,
       });
       void get().loadChatForCurrentDesign();
       void get().loadCommentsForCurrentDesign();
+      void get().loadCanvasStateForCurrentDesign();
     } catch (err) {
       const msg = err instanceof Error ? err.message : tr('errors.unknown');
       get().pushToast({
@@ -1999,8 +2096,12 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
           currentDesignId: null,
           previewHtml: null,
           lastUsage: null,
-          canvasTabs: [FILES_TAB],
-          activeCanvasTab: 0,
+          canvasTabs: [FILES_TAB, CANVAS_TAB],
+          activeCanvasTab: 1,
+          canvasScene: null,
+          canvasImportedFiles: [],
+          canvasSceneLoaded: false,
+          canvasSeed: get().canvasSeed + 1,
         });
         if (remaining.length > 0 && remaining[0]) {
           await get().switchDesign(remaining[0].id);
@@ -2442,6 +2543,106 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
     }
   },
 
+  async loadCanvasStateForCurrentDesign() {
+    const designId = get().currentDesignId;
+    if (!designId || !window.codesign?.canvas) {
+      set((s) => ({
+        canvasScene: null,
+        canvasImportedFiles: [],
+        canvasSceneLoaded: true,
+        canvasSeed: s.canvasSeed + 1,
+      }));
+      return;
+    }
+    try {
+      const saved = await window.codesign.canvas.loadState(designId);
+      if (get().currentDesignId !== designId) return;
+      set((s) => ({
+        canvasScene: parseCanvasScene(saved.sceneJson),
+        canvasImportedFiles: uniqueFiles(saved.importedFiles),
+        canvasSceneLoaded: true,
+        canvasSeed: s.canvasSeed + 1,
+      }));
+    } catch (err) {
+      console.warn('[open-codesign] loadCanvasStateForCurrentDesign failed:', err);
+      set((s) => ({
+        canvasScene: null,
+        canvasImportedFiles: [],
+        canvasSceneLoaded: true,
+        canvasSeed: s.canvasSeed + 1,
+      }));
+    }
+  },
+
+  updateCanvasScene(input) {
+    set({
+      canvasScene: {
+        elements: input.elements,
+        appState: input.appState,
+        files: input.files,
+      },
+    });
+  },
+
+  async persistCanvasState(sceneJson, importedFiles) {
+    const designId = get().currentDesignId;
+    if (!designId || !window.codesign?.canvas) return;
+    try {
+      const currentScene = get().canvasScene;
+      const nextSceneJson =
+        sceneJson ??
+        (currentScene
+          ? serializeAsJSON(
+              currentScene.elements,
+              currentScene.appState as ExcalidrawAppState,
+              currentScene.files,
+              'local',
+            )
+          : null);
+      await window.codesign.canvas.saveState({
+        designId,
+        sceneJson: nextSceneJson,
+        importedFiles: uniqueFiles(importedFiles ?? get().canvasImportedFiles),
+      });
+    } catch (err) {
+      console.warn('[open-codesign] persistCanvasState failed:', err);
+    }
+  },
+
+  addCanvasImportedFile(file) {
+    set((s) => {
+      const next = uniqueFiles([...s.canvasImportedFiles, file]);
+      return { canvasImportedFiles: next };
+    });
+    void get().persistCanvasState(null);
+  },
+
+  removeCanvasImportedFile(path) {
+    set((s) => ({
+      canvasImportedFiles: s.canvasImportedFiles.filter((file) => file.path !== path),
+    }));
+    void get().persistCanvasState(null);
+  },
+
+  async buildCanvasContextFiles() {
+    const designId = get().currentDesignId;
+    const scene = get().canvasScene;
+    if (!designId || !window.codesign?.canvas || !hasCanvasContent(scene)) {
+      return [];
+    }
+    try {
+      const artifacts = await buildCanvasContextArtifacts(scene);
+      if (artifacts.length === 0) return [];
+      return await window.codesign.canvas.writeContextFiles({
+        designId,
+        files: artifacts,
+      });
+    } catch (err) {
+      console.warn('[open-codesign] buildCanvasContextFiles failed:', err);
+      return [];
+    }
+  },
+
   openCanvasFileTab(path: string) {
     set((s) => {
       const result = openFileTab(s.canvasTabs, path);
@@ -2464,7 +2665,7 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
   },
 
   resetCanvasTabs() {
-    set({ canvasTabs: [FILES_TAB], activeCanvasTab: 0 });
+    set({ canvasTabs: [FILES_TAB, CANVAS_TAB], activeCanvasTab: 1 });
   },
 
   async refreshDiagnosticEvents() {

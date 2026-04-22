@@ -169,7 +169,11 @@ describe('useCodesignStore generation cancellation', () => {
     const secondId = useCodesignStore.getState().activeGenerationId;
     if (!secondId) throw new Error('expected second generation id');
     expect(secondId).not.toBe(firstId);
+    await vi.waitFor(() => expect(pendingById.has(secondId)).toBe(true));
 
+    // Cancellation can now land before the first run reaches the provider, so
+    // this pending task may or may not exist. If it does, resolving it must
+    // not override the active second run.
     pendingById.get(firstId)?.resolve({
       artifacts: [{ content: '<html>old</html>' }],
       message: 'Old result',
@@ -682,7 +686,7 @@ describe('useCodesignStore design management', () => {
     const state = useCodesignStore.getState();
     expect(state.previewHtml).toBeNull();
     expect(state.iframeErrors).toEqual(['ARTIFACT_INVALID_BROKEN_JSX']);
-    expect(state.canvasTabs).toEqual([{ kind: 'files' }]);
+    expect(state.canvasTabs).toEqual([{ kind: 'files' }, { kind: 'canvas' }]);
   });
 
   it('createNewDesign resets messages + preview and stores the new id as current', async () => {
