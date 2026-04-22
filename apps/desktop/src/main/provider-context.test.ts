@@ -39,4 +39,19 @@ describe('createProviderContextStore', () => {
     expect(store.size()).toBe(1);
     expect(store.consume('a')).toEqual({ v: 2 });
   });
+
+  it('does NOT evict when overwriting an existing key even at capacity', () => {
+    const store = createProviderContextStore(3);
+    store.remember('a', { v: 1 });
+    store.remember('b', { v: 2 });
+    store.remember('c', { v: 3 });
+    // Overwrite 'a' — a second `provider.error` for the same runId should
+    // refresh the stash in place, not silently evict 'b' (the oldest by
+    // insertion) and lose an unrelated run's upstream_request_id.
+    store.remember('a', { v: 99 });
+    expect(store.size()).toBe(3);
+    expect(store.consume('b')).toEqual({ v: 2 });
+    expect(store.consume('a')).toEqual({ v: 99 });
+    expect(store.consume('c')).toEqual({ v: 3 });
+  });
 });
