@@ -44,6 +44,7 @@ import { armGenerationTimeout, cancelGenerationRequest } from './generation-ipc'
 import { maybeAbortIfRunningFromDmg } from './install-check';
 import { registerLocaleIpc } from './locale-ipc';
 import { getLogPath, getLogger, initLogger } from './logger';
+import { isAllowedExternalUrl } from './open-external';
 import {
   getApiKeyForProvider,
   getCachedConfig,
@@ -958,20 +959,10 @@ function registerIpcHandlers(db: Database | null): void {
     if (typeof url !== 'string') {
       throw new CodesignError('codesign:v1:open-external requires a string url', 'IPC_BAD_INPUT');
     }
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
+    if (!isAllowedExternalUrl(url)) {
       throw new CodesignError('URL not allowed', 'IPC_BAD_INPUT');
     }
-    if (
-      parsed.protocol !== 'https:' ||
-      parsed.origin !== 'https://github.com' ||
-      !parsed.pathname.startsWith('/OpenCoworkAI/open-codesign/releases/')
-    ) {
-      throw new CodesignError('URL not allowed', 'IPC_BAD_INPUT');
-    }
-    await shell.openExternal(parsed.toString());
+    await shell.openExternal(url);
   });
 }
 
