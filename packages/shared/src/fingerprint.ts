@@ -6,7 +6,7 @@
  * superficially similar but genuinely distinct failures.
  *
  * Design:
- *   fingerprint = firstEight(sha1(errorCode + "|" + top-3-normalized-stack-frames))
+ *   fingerprint = stable8hex(errorCode + "|" + top-3-normalized-stack-frames)
  *
  * Normalized stack frame:
  *   - strip absolute paths (keep basename only)
@@ -20,9 +20,11 @@
  *   - different message text for the same bug (user names, ids, etc.) shouldn't
  *     fork the fingerprint
  *   - short hash keeps it greppable in GitHub issue titles
+ *
+ * This implementation deliberately avoids `node:crypto` so the shared package
+ * can be bundled into both Electron main and renderer targets. Cryptographic
+ * strength is unnecessary here; we only need a stable low-collision bucket key.
  */
-
-import { createHash } from 'node:crypto';
 
 export interface FingerprintInput {
   errorCode: string;
@@ -32,7 +34,17 @@ export interface FingerprintInput {
 export function computeFingerprint(input: FingerprintInput): string {
   const frames = extractTopFrames(input.stack, 3).map(normalizeFrame);
   const basis = `${input.errorCode}|${frames.join('\n')}`;
-  return createHash('sha1').update(basis).digest('hex').slice(0, 8);
+  return hash32Hex(basis);
+}
+
+function hash32Hex(value: string): string {
+  // FNV-1a 32-bit: tiny, deterministic, and available in every JS runtime.
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
 function extractTopFrames(stack: string | undefined, limit: number): string[] {

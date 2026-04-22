@@ -144,4 +144,45 @@ describe('generationStage transitions', () => {
 
     expect(useCodesignStore.getState().generationStage).toBe('done');
   });
+
+  it('does not append artifact_delivered when generate returns assistant text only', async () => {
+    useCodesignStore.setState({
+      currentDesignId: 'design-1',
+      previewHtml: '<html><body>existing</body></html>',
+    });
+
+    const append = vi.fn(async (input: { designId: string; kind: string; payload: unknown }) => ({
+      id: `${input.kind}-1`,
+      designId: input.designId,
+      kind: input.kind,
+      payload: input.payload,
+      createdAt: new Date().toISOString(),
+      seq: 1,
+    }));
+    const generate = vi.fn(async () => ({
+      artifacts: [],
+      message: '我是 gpt-5.4。',
+    }));
+
+    vi.stubGlobal('window', {
+      codesign: {
+        generate,
+        chat: {
+          seedFromSnapshots: vi.fn(async () => {}),
+          list: vi.fn(async () => []),
+          append,
+        },
+      },
+      setTimeout,
+    });
+
+    await useCodesignStore.getState().sendPrompt({ prompt: '你是什么模型' });
+
+    const kinds = append.mock.calls.map(([input]) => (input as { kind: string }).kind);
+    expect(kinds).toContain('user');
+    expect(kinds).toContain('assistant_text');
+    expect(kinds).not.toContain('artifact_delivered');
+    expect(useCodesignStore.getState().previewHtml).toBe('<html><body>existing</body></html>');
+    expect(useCodesignStore.getState().generationStage).toBe('done');
+  });
 });

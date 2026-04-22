@@ -822,7 +822,9 @@ function applyGenerateSuccess(
     const designId = designIdAtStart ?? get().currentDesignId;
     if (designId) {
       const artifact = artifactFromResult(firstArtifact, prompt, assistantMessage);
-      void persistDesignState(get, designId, get().previewHtml, artifact);
+      if (artifact !== null) {
+        void persistDesignState(get, designId, get().previewHtml, artifact);
+      }
       // Sidebar v2: append chat rows for artifact delivery.
       // When agent runtime is active (tool_call rows exist), useAgentStream
       // already persists assistant_text on turn_end with artifact stripping.
@@ -836,11 +838,13 @@ function applyGenerateSuccess(
           payload: { text: assistantMessage },
         });
       }
-      void get().appendChatMessage({
-        designId,
-        kind: 'artifact_delivered',
-        payload: { createdAt: new Date().toISOString() },
-      });
+      if (firstArtifact) {
+        void get().appendChatMessage({
+          designId,
+          kind: 'artifact_delivered',
+          payload: { createdAt: new Date().toISOString() },
+        });
+      }
     }
     if (rejectedUsageFields.length > 0) {
       const detail = rejectedUsageFields.join(', ');

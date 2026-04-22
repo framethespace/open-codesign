@@ -20,8 +20,8 @@ import {
   CodesignError,
   GeneratePayload,
   GeneratePayloadV1,
-  computeFingerprint,
 } from '@open-codesign/shared';
+import { computeFingerprint } from '@open-codesign/shared/fingerprint';
 import type BetterSqlite3 from 'better-sqlite3';
 import type { BrowserWindow as ElectronBrowserWindow } from 'electron';
 import { autoUpdater } from 'electron-updater';
@@ -618,7 +618,7 @@ function registerIpcHandlers(db: Database | null): void {
             logger: coreLogger,
           });
           const result = {
-            message: codex.rawOutput,
+            message: codex.message,
             artifacts: codex.artifacts,
             inputTokens: 0,
             outputTokens: 0,

@@ -5,11 +5,8 @@
  * process-level state (no Date.now, no app.getPath, etc.).
  */
 
-import {
-  type ActionTimelineEntry,
-  type DiagnosticEventRow,
-  normalizeFrame,
-} from '@open-codesign/shared';
+import type { ActionTimelineEntry, DiagnosticEventRow } from '@open-codesign/shared';
+import { normalizeFrame } from '@open-codesign/shared/fingerprint';
 
 export interface SummaryInput {
   event: DiagnosticEventRow;

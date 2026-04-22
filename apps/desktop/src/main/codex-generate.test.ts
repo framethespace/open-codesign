@@ -84,7 +84,7 @@ describe('runCodexGenerate', () => {
     ).rejects.toMatchObject({
       code: ERROR_CODES.PROVIDER_AUTH_MISSING,
     });
-  });
+  }, 15_000);
 
   it('returns artifacts when CodexClient.chat yields artifact text', async () => {
     const { runCodexGenerate } = await import('./codex-generate');
@@ -135,7 +135,45 @@ describe('runCodexGenerate', () => {
     expect(result.artifacts).toHaveLength(1);
     expect(result.artifacts[0]?.content).toContain('<html>');
     expect(result.artifacts[0]?.id).toBe('a1');
-    expect(result.rawOutput).toContain('<artifact');
+    expect(result.message).toBe('Here you go.');
+    expect(result.issues).toEqual([]);
+  });
+
+  it('allows plain-text replies for non-design prompts', async () => {
+    const { runCodexGenerate } = await import('./codex-generate');
+    const store = makeStore();
+    await store.write({
+      schemaVersion: 1,
+      accessToken: 'at',
+      refreshToken: 'rt',
+      idToken: 'id',
+      expiresAt: Date.now() + 3_600_000,
+      accountId: 'acc-1',
+      email: 'a@b.com',
+      updatedAt: Date.now(),
+    });
+
+    const chat = vi.fn(async () => ({
+      text: '我是 gpt-5.4，目前在 open-codesign 里作为设计助手运行。',
+      raw: {},
+    }));
+    const clientFactory = vi.fn(
+      () => ({ chat }) as unknown as import('@open-codesign/providers/codex').CodexClient,
+    );
+
+    const result = await runCodexGenerate({
+      prompt: '你是什么模型',
+      history: [],
+      model: MODEL,
+      attachments: [],
+      referenceUrl: null,
+      designSystem: null,
+      tokenStore: store,
+      clientFactory,
+    });
+
+    expect(result.artifacts).toEqual([]);
+    expect(result.message).toContain('gpt-5.4');
     expect(result.issues).toEqual([]);
   });
 

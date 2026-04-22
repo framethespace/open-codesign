@@ -22,8 +22,8 @@ import {
   type ListEventsResult,
   type ReportEventInput,
   type ReportEventResult,
-  computeFingerprint,
 } from '@open-codesign/shared';
+import { computeFingerprint } from '@open-codesign/shared/fingerprint';
 import type BetterSqlite3 from 'better-sqlite3';
 import { configPath } from './config';
 import { composeSummaryMarkdown } from './diagnostic-summary';
