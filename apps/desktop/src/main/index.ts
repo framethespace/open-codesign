@@ -1048,6 +1048,22 @@ void app.whenReady().then(async () => {
 
   try {
     initLogger();
+    // Single-instance lock. Two simultaneous Electron instances would race
+    // `cleanupStaleTmps` vs `writeAtomic` (B's cleanup unlinks A's in-flight
+    // tmp → ENOENT rename) and collide on the SQLite WAL. macOS usually
+    // enforces this at the OS level, but `open -n` defeats that — so we
+    // acquire the lock explicitly before touching any shared files.
+    const gotLock = app.requestSingleInstanceLock();
+    if (!gotLock) {
+      app.quit();
+      return;
+    }
+    app.on('second-instance', () => {
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      }
+    });
     // Show a blocking dialog if the user launched from the DMG mount. If
     // they accept the remedy, we quit here before touching safeStorage / the
     // snapshots DB so nothing half-initialises against a bad install.
