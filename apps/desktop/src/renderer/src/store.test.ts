@@ -44,6 +44,28 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function canvasInputFile(path: string, name: string) {
+  return { path, name, size: 128 };
+}
+
+function canvasScene() {
+  return {
+    elements: [
+      {
+        id: 'canvas-1',
+        type: 'rectangle',
+        isDeleted: false,
+        x: 10,
+        y: 20,
+        width: 120,
+        height: 80,
+      },
+    ],
+    appState: {},
+    files: {},
+  };
+}
+
 function resetStore() {
   useCodesignStore.setState({
     ...initialState,
@@ -282,6 +304,131 @@ describe('useCodesignStore auto-continue incomplete todos', () => {
     );
 
     useCodesignStore.setState({ sendPrompt: initialState.sendPrompt });
+  });
+});
+
+describe('useCodesignStore canvas context attachments', () => {
+  it('shows canvas context in the user chat payload and sends fresh canvas files when dirty', async () => {
+    const append = vi.fn(async (input: { designId: string; kind: string; payload: unknown }) => ({
+      id: 1,
+      designId: input.designId,
+      seq: 1,
+      kind: input.kind,
+      payload: input.payload,
+      snapshotId: null,
+      createdAt: new Date().toISOString(),
+      schemaVersion: 1,
+    }));
+    const generate = vi.fn(async (payload: { attachments: Array<{ path: string; name: string }> }) => ({
+      artifacts: [],
+      message: 'done',
+    }));
+
+    vi.stubGlobal('window', {
+      codesign: {
+        generate,
+        chat: {
+          seedFromSnapshots: vi.fn(async () => {}),
+          list: vi.fn(async () => []),
+          append,
+        },
+        canvas: {
+          saveState: vi.fn(async () => ({ ok: true })),
+          writeContextFiles: vi.fn(async () => [canvasInputFile('/tmp/canvas.svg', 'canvas.svg')]),
+        },
+      },
+      setTimeout,
+      clearTimeout,
+    });
+
+    useCodesignStore.setState({
+      currentDesignId: 'design-canvas',
+      canvasScene: canvasScene() as never,
+      canvasImportedFiles: [canvasInputFile('/tmp/ref.png', 'ref.png')],
+      canvasSceneLoaded: true,
+      canvasRevision: 2,
+      lastGeneratedCanvasRevision: 1,
+    });
+
+    await useCodesignStore.getState().sendPrompt({ prompt: 'use the canvas' });
+
+    expect(append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        designId: 'design-canvas',
+        kind: 'user',
+        payload: expect.objectContaining({
+          text: 'use the canvas',
+          contextBadges: ['Canvas context'],
+        }),
+      }),
+    );
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachments: expect.arrayContaining([
+          expect.objectContaining({ name: 'ref.png' }),
+          expect.objectContaining({ name: 'canvas.svg' }),
+        ]),
+      }),
+    );
+    expect(useCodesignStore.getState().lastGeneratedCanvasRevision).toBe(2);
+  });
+
+  it('does not resend canvas context when the canvas is unchanged since the last generation', async () => {
+    const append = vi.fn(async (input: { designId: string; kind: string; payload: unknown }) => ({
+      id: 1,
+      designId: input.designId,
+      seq: 1,
+      kind: input.kind,
+      payload: input.payload,
+      snapshotId: null,
+      createdAt: new Date().toISOString(),
+      schemaVersion: 1,
+    }));
+    const writeContextFiles = vi.fn(async () => [canvasInputFile('/tmp/canvas.svg', 'canvas.svg')]);
+    const generate = vi.fn(async () => ({ artifacts: [], message: 'done' }));
+
+    vi.stubGlobal('window', {
+      codesign: {
+        generate,
+        chat: {
+          seedFromSnapshots: vi.fn(async () => {}),
+          list: vi.fn(async () => []),
+          append,
+        },
+        canvas: {
+          saveState: vi.fn(async () => ({ ok: true })),
+          writeContextFiles,
+        },
+      },
+      setTimeout,
+      clearTimeout,
+    });
+
+    useCodesignStore.setState({
+      currentDesignId: 'design-canvas',
+      canvasScene: canvasScene() as never,
+      canvasImportedFiles: [canvasInputFile('/tmp/ref.png', 'ref.png')],
+      canvasSceneLoaded: true,
+      canvasRevision: 2,
+      lastGeneratedCanvasRevision: 2,
+    });
+
+    await useCodesignStore.getState().sendPrompt({ prompt: 'follow up' });
+
+    expect(writeContextFiles).not.toHaveBeenCalled();
+    expect(append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'user',
+        payload: expect.not.objectContaining({
+          contextBadges: expect.anything(),
+        }),
+      }),
+    );
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachments: [],
+      }),
+    );
   });
 });
 

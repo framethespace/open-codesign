@@ -82,7 +82,10 @@ export function Sidebar({ prompt, setPrompt, onSubmit }: SidebarProps) {
   );
   const cancelGeneration = useCodesignStore((s) => s.cancelGeneration);
   const inputFiles = useCodesignStore((s) => s.inputFiles);
+  const canvasScene = useCodesignStore((s) => s.canvasScene);
   const canvasImportedFiles = useCodesignStore((s) => s.canvasImportedFiles);
+  const canvasRevision = useCodesignStore((s) => s.canvasRevision);
+  const lastGeneratedCanvasRevision = useCodesignStore((s) => s.lastGeneratedCanvasRevision);
   const referenceUrl = useCodesignStore((s) => s.referenceUrl);
   const setReferenceUrl = useCodesignStore((s) => s.setReferenceUrl);
   const pickInputFiles = useCodesignStore((s) => s.pickInputFiles);
@@ -115,6 +118,10 @@ export function Sidebar({ prompt, setPrompt, onSubmit }: SidebarProps) {
 
   const designSystem = config?.designSystem ?? null;
   const currentDesign = designs.find((d) => d.id === currentDesignId) ?? null;
+  const hasCanvasContext = Boolean(
+    (canvasScene && canvasScene.elements.length > 0) || canvasImportedFiles.length > 0,
+  );
+  const canvasWillBeSent = hasCanvasContext && canvasRevision > lastGeneratedCanvasRevision;
   const visibleFiles = [...inputFiles, ...canvasImportedFiles].filter(
     (file, index, all) => all.findIndex((candidate) => candidate.path === file.path) === index,
   );
@@ -205,6 +212,21 @@ export function Sidebar({ prompt, setPrompt, onSubmit }: SidebarProps) {
                       </span>
                     );
                   })}
+                  {hasCanvasContext ? (
+                    <span
+                      className="inline-flex max-w-full items-center gap-[6px] rounded-full border border-[var(--color-border)] bg-[var(--color-background-secondary)] px-[10px] py-[5px] text-[11px] text-[var(--color-text-secondary)]"
+                      title={
+                        canvasWillBeSent
+                          ? t('canvas.contextReady')
+                          : t('canvas.contextUpToDate')
+                      }
+                    >
+                      <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+                        {t('canvas.canvasTab')}
+                      </span>
+                      <span>{canvasWillBeSent ? t('canvas.contextReady') : t('canvas.contextUpToDate')}</span>
+                    </span>
+                  ) : null}
                   {referenceUrl.trim() ? (
                     <span
                       className="inline-flex max-w-full items-center gap-[6px] rounded-full border border-[var(--color-border)] bg-[var(--color-background-secondary)] px-[10px] py-[5px] text-[11px] text-[var(--color-text-secondary)]"

@@ -224,6 +224,8 @@ interface CodesignState {
   canvasImportedFiles: LocalInputFile[];
   canvasSceneLoaded: boolean;
   canvasSeed: number;
+  canvasRevision: number;
+  lastGeneratedCanvasRevision: number;
 
   // PR4 — diagnostics slice. Pull-based: Diagnostics panel + error UI call
   // `refreshDiagnosticEvents` on mount / when a failure surfaces. No polling.
@@ -1266,6 +1268,8 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
   canvasImportedFiles: [],
   canvasSceneLoaded: false,
   canvasSeed: 0,
+  canvasRevision: 0,
+  lastGeneratedCanvasRevision: 0,
 
   recentEvents: [],
   unreadErrorCount: 0,
@@ -1416,8 +1420,23 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
     );
     if (!request) return;
 
+    if (get().currentDesignId === null && window.codesign.snapshots) {
+      await get().ensureCurrentDesign();
+    }
+
     const generationId = newId();
     const designIdAtStart = get().currentDesignId;
+    const canvasSceneAtSend = get().canvasScene;
+    const canvasImportedFilesAtSend = get().canvasImportedFiles;
+    const hasCanvasStateToPersist =
+      canvasSceneAtSend !== null || canvasImportedFilesAtSend.length > 0;
+    if (hasCanvasStateToPersist) {
+      await get().persistCanvasState(null, canvasImportedFilesAtSend);
+    }
+    const canvasRevisionAtSend = get().canvasRevision;
+    const shouldIncludeCanvasContext =
+      canvasRevisionAtSend > get().lastGeneratedCanvasRevision &&
+      (hasCanvasContent(canvasSceneAtSend) || canvasImportedFilesAtSend.length > 0);
     if (
       designIdAtStart &&
       !input.silent &&
@@ -1443,7 +1462,9 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
     // the current HTML via text_editor.view() when needed, so older prose in
     // history offers diminishing value and pushes us toward the token ceiling.
     const HISTORY_CAP = 12;
-    const canvasContextFilesPromise = get().buildCanvasContextFiles();
+    const canvasContextFilesPromise = shouldIncludeCanvasContext
+      ? get().buildCanvasContextFiles()
+      : Promise.resolve([]);
     const fullHistoryPromise = buildHistoryFromChat(designIdAtStart);
     const [canvasContextFiles, fullHistory] = await Promise.all([
       canvasContextFilesPromise,
@@ -1451,7 +1472,7 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
     ]);
     const mergedAttachments = uniqueFiles([
       ...request.attachments,
-      ...get().canvasImportedFiles,
+      ...(shouldIncludeCanvasContext ? canvasImportedFilesAtSend : []),
       ...canvasContextFiles,
     ]).slice(0, 12);
 
@@ -1480,7 +1501,12 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
       void get().appendChatMessage({
         designId: designIdAtStart,
         kind: 'user',
-        payload: { text: request.prompt },
+        payload: {
+          text: request.prompt,
+          ...(shouldIncludeCanvasContext
+            ? { contextBadges: [tr('canvas.contextBadge')] }
+            : {}),
+        },
       });
     }
 
@@ -1512,6 +1538,14 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
         },
         designIdAtStart,
       );
+      if (designIdAtStart && get().currentDesignId === designIdAtStart) {
+        set((s) => ({
+          lastGeneratedCanvasRevision:
+            s.currentDesignId === designIdAtStart
+              ? Math.max(s.lastGeneratedCanvasRevision, canvasRevisionAtSend)
+              : s.lastGeneratedCanvasRevision,
+        }));
+      }
       // After a successful generate, persistDesignState (called inside
       // applyGenerateSuccess) creates the new snapshot and updates
       // currentSnapshotId via loadCommentsForCurrentDesign. Mark any pending
@@ -1862,6 +1896,8 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
         canvasImportedFiles: [],
         canvasSceneLoaded: false,
         canvasSeed: get().canvasSeed + 1,
+        canvasRevision: 0,
+        lastGeneratedCanvasRevision: 0,
       });
       await get().loadDesigns();
       void get().loadChatForCurrentDesign();
@@ -1936,6 +1972,8 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
         canvasImportedFiles: [],
         canvasSceneLoaded: false,
         canvasSeed: get().canvasSeed + 1,
+        canvasRevision: 0,
+        lastGeneratedCanvasRevision: 0,
       });
       void get().loadChatForCurrentDesign();
       void get().loadCommentsForCurrentDesign();
@@ -2004,6 +2042,8 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
         canvasImportedFiles: [],
         canvasSceneLoaded: false,
         canvasSeed: get().canvasSeed + 1,
+        canvasRevision: 0,
+        lastGeneratedCanvasRevision: 0,
       });
       void get().loadChatForCurrentDesign();
       void get().loadCommentsForCurrentDesign();
@@ -2102,6 +2142,8 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
           canvasImportedFiles: [],
           canvasSceneLoaded: false,
           canvasSeed: get().canvasSeed + 1,
+          canvasRevision: 0,
+          lastGeneratedCanvasRevision: 0,
         });
         if (remaining.length > 0 && remaining[0]) {
           await get().switchDesign(remaining[0].id);
@@ -2551,17 +2593,24 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
         canvasImportedFiles: [],
         canvasSceneLoaded: true,
         canvasSeed: s.canvasSeed + 1,
+        canvasRevision: 0,
+        lastGeneratedCanvasRevision: 0,
       }));
       return;
     }
     try {
       const saved = await window.codesign.canvas.loadState(designId);
       if (get().currentDesignId !== designId) return;
+      const nextScene = parseCanvasScene(saved.sceneJson);
+      const nextImportedFiles = uniqueFiles(saved.importedFiles);
+      const hasSavedCanvas = hasCanvasContent(nextScene) || nextImportedFiles.length > 0;
       set((s) => ({
-        canvasScene: parseCanvasScene(saved.sceneJson),
-        canvasImportedFiles: uniqueFiles(saved.importedFiles),
+        canvasScene: nextScene,
+        canvasImportedFiles: nextImportedFiles,
         canvasSceneLoaded: true,
         canvasSeed: s.canvasSeed + 1,
+        canvasRevision: hasSavedCanvas ? 1 : 0,
+        lastGeneratedCanvasRevision: 0,
       }));
     } catch (err) {
       console.warn('[open-codesign] loadCanvasStateForCurrentDesign failed:', err);
@@ -2570,18 +2619,21 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
         canvasImportedFiles: [],
         canvasSceneLoaded: true,
         canvasSeed: s.canvasSeed + 1,
+        canvasRevision: 0,
+        lastGeneratedCanvasRevision: 0,
       }));
     }
   },
 
   updateCanvasScene(input) {
-    set({
+    set((s) => ({
       canvasScene: {
         elements: input.elements,
         appState: input.appState,
         files: input.files,
       },
-    });
+      canvasRevision: s.canvasRevision + 1,
+    }));
   },
 
   async persistCanvasState(sceneJson, importedFiles) {
@@ -2612,7 +2664,7 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
   addCanvasImportedFile(file) {
     set((s) => {
       const next = uniqueFiles([...s.canvasImportedFiles, file]);
-      return { canvasImportedFiles: next };
+      return { canvasImportedFiles: next, canvasRevision: s.canvasRevision + 1 };
     });
     void get().persistCanvasState(null);
   },
@@ -2620,6 +2672,7 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
   removeCanvasImportedFile(path) {
     set((s) => ({
       canvasImportedFiles: s.canvasImportedFiles.filter((file) => file.path !== path),
+      canvasRevision: s.canvasRevision + 1,
     }));
     void get().persistCanvasState(null);
   },

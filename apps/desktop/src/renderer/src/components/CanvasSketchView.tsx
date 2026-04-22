@@ -26,15 +26,47 @@ export function CanvasSketchView() {
   const currentDesignId = useCodesignStore((s) => s.currentDesignId);
   const canvasSceneLoaded = useCodesignStore((s) => s.canvasSceneLoaded);
   const canvasSeed = useCodesignStore((s) => s.canvasSeed);
+  const ensureCurrentDesign = useCodesignStore((s) => s.ensureCurrentDesign);
+  const loadCanvasStateForCurrentDesign = useCodesignStore((s) => s.loadCanvasStateForCurrentDesign);
 
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const saveTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
+    if (!window.codesign?.snapshots) return;
+    if (!currentDesignId) {
+      void ensureCurrentDesign();
+      return;
+    }
+    if (!canvasSceneLoaded) {
+      void loadCanvasStateForCurrentDesign();
+    }
+  }, [currentDesignId, canvasSceneLoaded, ensureCurrentDesign, loadCanvasStateForCurrentDesign]);
+
+  useEffect(() => {
+    const flushCanvasState = () => {
+      const api = apiRef.current;
+      if (!api) return;
+      const sceneJson = serializeAsJSON(
+        api.getSceneElementsIncludingDeleted(),
+        api.getAppState(),
+        api.getFiles(),
+        'local',
+      );
+      void useCodesignStore.getState().persistCanvasState(sceneJson);
+    };
+
+    const handleBeforeUnload = () => {
+      flushCanvasState();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
       }
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      flushCanvasState();
     };
   }, []);
 
