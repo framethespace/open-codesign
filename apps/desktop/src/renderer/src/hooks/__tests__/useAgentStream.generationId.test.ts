@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { AgentStreamEvent } from '../../../../preload/index';
+import { extractTodoProgress, summarizeIncompleteTodos } from '../useAgentStream';
 
 interface LogPayload {
   generationId: string;
@@ -121,5 +122,33 @@ describe('useAgentStream — generationId in log payloads', () => {
     };
     expect(typeof event.generationId).toBe('string');
     expect(event.generationId.length).toBeGreaterThan(0);
+  });
+});
+
+describe('useAgentStream todo progress helpers', () => {
+  it('extracts todo progress from set_todos args', () => {
+    expect(
+      extractTodoProgress({
+        items: [
+          { text: 'Build shell', checked: true },
+          { text: 'Add transitions', status: 'in_progress' },
+          { text: 'Final polish', checked: false },
+        ],
+      }),
+    ).toEqual([
+      { text: 'Build shell', status: 'completed' },
+      { text: 'Add transitions', status: 'in_progress' },
+      { text: 'Final polish', status: 'pending' },
+    ]);
+  });
+
+  it('summarizes remaining todos only when work is unfinished', () => {
+    expect(
+      summarizeIncompleteTodos([
+        { text: 'A', status: 'completed' },
+        { text: 'B', status: 'pending' },
+      ]),
+    ).toEqual({ remaining: 1, total: 2 });
+    expect(summarizeIncompleteTodos([{ text: 'A', status: 'completed' }])).toBeNull();
   });
 });

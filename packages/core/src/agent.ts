@@ -858,13 +858,13 @@ export async function generateViaAgent(
     artifacts: collected.artifacts.length,
   });
 
-  const usage = finalAssistant.usage;
+  const usage = sumAssistantUsage(agent.state.messages.slice(historyAsAgentMessages.length));
   const output: GenerateOutput = {
     message: stripEmptyFences(collected.text),
     artifacts: collected.artifacts,
-    inputTokens: usage?.input ?? 0,
-    outputTokens: usage?.output ?? 0,
-    costUsd: usage?.cost?.total ?? 0,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    costUsd: usage.costUsd,
   };
   return skillResult.warnings.length > 0
     ? { ...output, warnings: [...(output.warnings ?? []), ...skillResult.warnings] }
@@ -914,4 +914,22 @@ function findFinalAssistantMessage(messages: AgentMessage[]): PiAssistantMessage
     }
   }
   return undefined;
+}
+
+export function sumAssistantUsage(messages: AgentMessage[]): {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+} {
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let costUsd = 0;
+  for (const msg of messages) {
+    if (!msg || msg.role !== 'assistant') continue;
+    const assistant = msg as PiAssistantMessage;
+    inputTokens += assistant.usage?.input ?? 0;
+    outputTokens += assistant.usage?.output ?? 0;
+    costUsd += assistant.usage?.cost?.total ?? 0;
+  }
+  return { inputTokens, outputTokens, costUsd };
 }

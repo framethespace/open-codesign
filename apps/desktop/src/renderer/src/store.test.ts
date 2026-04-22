@@ -10,8 +10,28 @@ const READY_CONFIG: OnboardingState = {
   baseUrl: null,
   designSystem: null,
 };
+const USAGE_STORAGE_KEY = 'open-codesign:usage-by-design';
+type SendPromptFn = ReturnType<typeof useCodesignStore.getState>['sendPrompt'];
 
 const initialState = useCodesignStore.getState();
+
+function createStorageMock(initial: Record<string, string> = {}) {
+  const store = new Map(Object.entries(initial));
+  return {
+    getItem(key: string) {
+      return store.has(key) ? store.get(key)! : null;
+    },
+    setItem(key: string, value: string) {
+      store.set(key, value);
+    },
+    removeItem(key: string) {
+      store.delete(key);
+    },
+    clear() {
+      store.clear();
+    },
+  };
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -227,6 +247,39 @@ describe('useCodesignStore generation cancellation', () => {
   });
 });
 
+describe('useCodesignStore auto-continue incomplete todos', () => {
+  it('fires one silent continuation per design until a new explicit prompt resets the guard', async () => {
+    const sendPromptMock = vi.fn(async () => undefined);
+    const mockedSendPrompt = sendPromptMock as unknown as SendPromptFn;
+
+    useCodesignStore.setState({
+      currentDesignId: 'design-incomplete',
+      isGenerating: false,
+      autoContinueIncompleteFired: new Set<string>(),
+      sendPrompt: mockedSendPrompt,
+    });
+
+    const first = useCodesignStore
+      .getState()
+      .tryAutoContinueIncomplete('design-incomplete', ['Finish the final screen']);
+    const second = useCodesignStore
+      .getState()
+      .tryAutoContinueIncomplete('design-incomplete', ['Finish the final screen']);
+
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+    expect(sendPromptMock).toHaveBeenCalledTimes(1);
+    expect(sendPromptMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        silent: true,
+        prompt: expect.stringContaining('Finish the final screen'),
+      }),
+    );
+
+    useCodesignStore.setState({ sendPrompt: initialState.sendPrompt });
+  });
+});
+
 describe('useCodesignStore view navigation', () => {
   it('starts on hub view', () => {
     expect(useCodesignStore.getState().view).toBe('hub');
@@ -250,6 +303,8 @@ describe('useCodesignStore token usage tracking', () => {
   });
 
   it('records lastUsage when generate resolves with usage fields', async () => {
+    const localStorage = createStorageMock();
+    const listDesigns = vi.fn(() => Promise.resolve([]));
     const generate = vi.fn(() =>
       Promise.resolve({
         artifacts: [{ content: '<html>ok</html>' }],
@@ -261,19 +316,38 @@ describe('useCodesignStore token usage tracking', () => {
     );
 
     vi.stubGlobal('window', {
-      codesign: { generate },
+      codesign: {
+        generate,
+        snapshots: {
+          list: vi.fn(() => Promise.resolve([])),
+          create: vi.fn(() => Promise.resolve({ id: 'snap-1' })),
+          setThumbnail: vi.fn(() => Promise.resolve()),
+          listDesigns,
+        },
+        chat: {
+          list: vi.fn(() => Promise.resolve([])),
+          append: vi.fn(() => Promise.resolve(null)),
+        },
+      },
+      localStorage,
       setTimeout,
     });
 
-    useCodesignStore.setState({ lastUsage: null });
+    useCodesignStore.setState({ currentDesignId: 'design-usage', lastUsage: null });
 
     await useCodesignStore.getState().sendPrompt({ prompt: 'design landing' });
+    await vi.waitFor(() => expect(listDesigns).toHaveBeenCalled());
 
     const state = useCodesignStore.getState();
     expect(state.lastUsage).toEqual({ inputTokens: 1200, outputTokens: 800, costUsd: 0.0125 });
+    expect(JSON.parse(localStorage.getItem(USAGE_STORAGE_KEY) ?? '{}')).toEqual({
+      'design-usage': { inputTokens: 1200, outputTokens: 800, costUsd: 0.0125 },
+    });
   });
 
   it('treats missing usage fields as zero without crashing', async () => {
+    const localStorage = createStorageMock();
+    const listDesigns = vi.fn(() => Promise.resolve([]));
     const generate = vi.fn(() =>
       Promise.resolve({
         artifacts: [{ content: '<html>ok</html>' }],
@@ -282,14 +356,75 @@ describe('useCodesignStore token usage tracking', () => {
     );
 
     vi.stubGlobal('window', {
-      codesign: { generate },
+      codesign: {
+        generate,
+        snapshots: {
+          list: vi.fn(() => Promise.resolve([])),
+          create: vi.fn(() => Promise.resolve({ id: 'snap-1' })),
+          setThumbnail: vi.fn(() => Promise.resolve()),
+          listDesigns,
+        },
+        chat: {
+          list: vi.fn(() => Promise.resolve([])),
+          append: vi.fn(() => Promise.resolve(null)),
+        },
+      },
+      localStorage,
       setTimeout,
     });
 
+    useCodesignStore.setState({ currentDesignId: 'design-usage' });
+
     await useCodesignStore.getState().sendPrompt({ prompt: 'fallback' });
+    await vi.waitFor(() => expect(listDesigns).toHaveBeenCalled());
 
     const state = useCodesignStore.getState();
     expect(state.lastUsage).toEqual({ inputTokens: 0, outputTokens: 0, costUsd: 0 });
+  });
+
+  it('keeps the last good preview when generate returns malformed JSX', async () => {
+    const localStorage = createStorageMock();
+    const listDesigns = vi.fn(() => Promise.resolve([]));
+    const generate = vi.fn(() =>
+      Promise.resolve({
+        artifacts: [{ content: 'function App(){ return <main><div></main>; }' }],
+        message: 'Done.',
+        inputTokens: 10,
+        outputTokens: 20,
+        costUsd: 0.001,
+      }),
+    );
+
+    vi.stubGlobal('window', {
+      codesign: {
+        generate,
+        snapshots: {
+          list: vi.fn(() => Promise.resolve([])),
+          create: vi.fn(() => Promise.resolve({ id: 'snap-1' })),
+          setThumbnail: vi.fn(() => Promise.resolve()),
+          listDesigns,
+        },
+        chat: {
+          list: vi.fn(() => Promise.resolve([])),
+          append: vi.fn(() => Promise.resolve(null)),
+        },
+      },
+      localStorage,
+      setTimeout,
+    });
+
+    useCodesignStore.setState({
+      currentDesignId: 'design-usage',
+      previewHtml: '<html><body>last good</body></html>',
+      iframeErrors: [],
+    });
+
+    await useCodesignStore.getState().sendPrompt({ prompt: 'break it' });
+    await vi.waitFor(() => expect(listDesigns).toHaveBeenCalled());
+
+    const state = useCodesignStore.getState();
+    expect(state.previewHtml).toBe('<html><body>last good</body></html>');
+    expect(state.iframeErrors.at(-1)).toBe('ARTIFACT_INVALID_BROKEN_JSX');
   });
 });
 
@@ -471,6 +606,85 @@ describe('useCodesignStore design management', () => {
     expect(useCodesignStore.getState().currentDesignId).toBe('design-a');
   });
 
+  it('restores persisted lastUsage when switching designs', async () => {
+    const localStorage = createStorageMock({
+      [USAGE_STORAGE_KEY]: JSON.stringify({
+        'design-a': { inputTokens: 100, outputTokens: 50, costUsd: 0.01 },
+        'design-b': { inputTokens: 200, outputTokens: 75, costUsd: 0.02 },
+      }),
+    });
+    const designs = [
+      {
+        schemaVersion: 1 as const,
+        id: 'design-a',
+        name: 'A',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        thumbnailText: null,
+        deletedAt: null,
+      },
+      {
+        schemaVersion: 1 as const,
+        id: 'design-b',
+        name: 'B',
+        createdAt: '2024-01-02T00:00:00.000Z',
+        updatedAt: '2024-01-02T00:00:00.000Z',
+        thumbnailText: null,
+        deletedAt: null,
+      },
+    ];
+    vi.stubGlobal('window', {
+      codesign: {
+        snapshots: {
+          listDesigns: vi.fn(() => Promise.resolve(designs)),
+          list: vi.fn(() => Promise.resolve([])),
+        },
+      },
+      localStorage,
+      setTimeout,
+    });
+
+    useCodesignStore.setState({ currentDesignId: 'design-a', lastUsage: null });
+    await useCodesignStore.getState().switchDesign('design-b');
+    expect(useCodesignStore.getState().lastUsage).toEqual({
+      inputTokens: 200,
+      outputTokens: 75,
+      costUsd: 0.02,
+    });
+
+    await useCodesignStore.getState().switchDesign('design-a');
+    expect(useCodesignStore.getState().lastUsage).toEqual({
+      inputTokens: 100,
+      outputTokens: 50,
+      costUsd: 0.01,
+    });
+  });
+
+  it('does not mount an invalid saved snapshot into preview on switchDesign', async () => {
+    vi.stubGlobal('window', {
+      codesign: {
+        snapshots: {
+          list: vi.fn(() =>
+            Promise.resolve([
+              {
+                id: 'snap-invalid',
+                artifactSource: 'function App(){ return <main><div></main>; }',
+              },
+            ]),
+          ),
+        },
+      },
+      setTimeout,
+    });
+
+    await useCodesignStore.getState().switchDesign('design-bad');
+
+    const state = useCodesignStore.getState();
+    expect(state.previewHtml).toBeNull();
+    expect(state.iframeErrors).toEqual(['ARTIFACT_INVALID_BROKEN_JSX']);
+    expect(state.canvasTabs).toEqual([{ kind: 'files' }]);
+  });
+
   it('createNewDesign resets messages + preview and stores the new id as current', async () => {
     const created = {
       schemaVersion: 1 as const,
@@ -502,6 +716,41 @@ describe('useCodesignStore design management', () => {
     const state = useCodesignStore.getState();
     expect(state.currentDesignId).toBe('fresh');
     expect(state.previewHtml).toBeNull();
+  });
+
+  it('createNewDesign hydrates persisted usage for the new design id', async () => {
+    const localStorage = createStorageMock({
+      [USAGE_STORAGE_KEY]: JSON.stringify({
+        fresh: { inputTokens: 321, outputTokens: 123, costUsd: 0.045 },
+      }),
+    });
+    const created = {
+      schemaVersion: 1 as const,
+      id: 'fresh',
+      name: 'Untitled design 1',
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+      thumbnailText: null,
+      deletedAt: null,
+    };
+    vi.stubGlobal('window', {
+      codesign: {
+        snapshots: {
+          createDesign: vi.fn(() => Promise.resolve(created)),
+          listDesigns: vi.fn(() => Promise.resolve([created])),
+        },
+      },
+      localStorage,
+      setTimeout,
+    });
+
+    const result = await useCodesignStore.getState().createNewDesign();
+    expect(result?.id).toBe('fresh');
+    expect(useCodesignStore.getState().lastUsage).toEqual({
+      inputTokens: 321,
+      outputTokens: 123,
+      costUsd: 0.045,
+    });
   });
 
   it('allows switchDesign while another design is generating (generation stays bound to its origin)', async () => {
@@ -551,6 +800,60 @@ describe('useCodesignStore design management', () => {
     expect(softDeleteDesign).not.toHaveBeenCalled();
     expect(useCodesignStore.getState().currentDesignId).toBe('design-a');
     expect(useCodesignStore.getState().toasts.at(-1)?.variant).toBe('info');
+  });
+
+  it('clears persisted usage when a design is deleted', async () => {
+    const localStorage = createStorageMock({
+      [USAGE_STORAGE_KEY]: JSON.stringify({
+        'design-a': { inputTokens: 111, outputTokens: 22, costUsd: 0.01 },
+        'design-b': { inputTokens: 333, outputTokens: 44, costUsd: 0.02 },
+      }),
+    });
+    const remaining = [
+      {
+        schemaVersion: 1 as const,
+        id: 'design-b',
+        name: 'B',
+        createdAt: '2024-01-02T00:00:00.000Z',
+        updatedAt: '2024-01-02T00:00:00.000Z',
+        thumbnailText: null,
+        deletedAt: null,
+      },
+    ];
+    vi.stubGlobal('window', {
+      codesign: {
+        snapshots: {
+          softDeleteDesign: vi.fn(() => Promise.resolve()),
+          listDesigns: vi.fn(() => Promise.resolve(remaining)),
+          list: vi.fn(() => Promise.resolve([])),
+        },
+      },
+      localStorage,
+      setTimeout,
+    });
+
+    useCodesignStore.setState({
+      currentDesignId: 'design-a',
+      designs: [
+        {
+          schemaVersion: 1 as const,
+          id: 'design-a',
+          name: 'A',
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+          thumbnailText: null,
+          deletedAt: null,
+        },
+        ...remaining,
+      ],
+      lastUsage: { inputTokens: 111, outputTokens: 22, costUsd: 0.01 },
+    });
+
+    await useCodesignStore.getState().softDeleteDesign('design-a');
+
+    expect(JSON.parse(localStorage.getItem(USAGE_STORAGE_KEY) ?? '{}')).toEqual({
+      'design-b': { inputTokens: 333, outputTokens: 44, costUsd: 0.02 },
+    });
   });
 });
 

@@ -209,9 +209,11 @@ Add a `SKILL.md` to any project to teach the model your own taste.
 - **Phone / tablet / desktop preview** — true responsive frames, switch with one click
 - **Files panel** — inspect multi-file artifacts (HTML, CSS, JS) before export
 - **Instant design switching** — the last five designs keep their preview iframes alive, so Hub ↔ Workspace and sidebar navigation stay zero-delay
+- **Resilient preview fallback** — if a generated artifact is malformed, the last good render stays visible instead of being replaced by a blank or broken canvas whenever possible
 - **Connection diagnostic panel** — one-click test for any provider, with actionable errors
-- **Per-generation token counter** — see exactly how many tokens each run cost in the sidebar
-- **Settings with four tabs** — Models, Appearance, Storage, and Advanced
+- **Top-bar usage badge** — see context-window usage, token totals, and USD cost for the latest run beside the model selector
+- **Automatic checklist continuation** — unfinished agent todo lists can continue automatically with one silent follow-up; disable it anytime in Advanced settings
+- **Settings with five tabs** — Models, Appearance, Storage, Diagnostics, and Advanced
 - **Light + dark themes**, **EN + 简体中文 UI** with live toggle
 
 ### Export and packaging

@@ -1795,6 +1795,7 @@ function AdvancedTab() {
     updateChannel: 'stable',
     generationTimeoutSec: 1200,
     checkForUpdatesOnStartup: true,
+    autoContinueIncompleteTodos: true,
     dismissedUpdateVersion: '',
     diagnosticsLastReadTs: 0,
   });
@@ -1864,6 +1865,18 @@ function AdvancedTab() {
           type="checkbox"
           checked={prefs.checkForUpdatesOnStartup}
           onChange={(e) => void updatePref({ checkForUpdatesOnStartup: e.target.checked })}
+          className="h-4 w-4 accent-[var(--color-accent)]"
+        />
+      </Row>
+
+      <Row
+        label={t('settings.advanced.autoContinueIncompleteTodos')}
+        hint={t('settings.advanced.autoContinueIncompleteTodosHint')}
+      >
+        <input
+          type="checkbox"
+          checked={prefs.autoContinueIncompleteTodos}
+          onChange={(e) => void updatePref({ autoContinueIncompleteTodos: e.target.checked })}
           className="h-4 w-4 accent-[var(--color-accent)]"
         />
       </Row>

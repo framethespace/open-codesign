@@ -56,6 +56,11 @@ export interface GenerateResult {
   costUsd: number;
 }
 
+export interface ModelUsageMetadata {
+  contextWindow: number | null;
+  maxTokens: number | null;
+}
+
 interface PiTextContent {
   type: 'text';
   text: string;
@@ -187,6 +192,43 @@ function synthesizeWireModel(
   return base;
 }
 
+function resolvePiModel(
+  getModel: (provider: string, modelId: string) => PiModel | undefined,
+  model: ModelRef,
+  opts: Pick<GenerateOptions, 'wire' | 'baseUrl'>,
+): PiModel | null {
+  const direct = getModel(model.provider, model.modelId);
+  if (direct) return direct;
+  if (opts.wire !== undefined) {
+    return synthesizeWireModel(model.provider, model.modelId, opts.wire, opts.baseUrl);
+  }
+  if (model.provider === 'openrouter') {
+    return synthesizeOpenRouterModel(model.modelId);
+  }
+  return null;
+}
+
+export async function getModelUsageMetadata(
+  model: ModelRef,
+  opts: Pick<GenerateOptions, 'wire' | 'baseUrl'> = {},
+): Promise<ModelUsageMetadata | null> {
+  const pi = (await import('@mariozechner/pi-ai')) as unknown as {
+    getModel: (provider: string, modelId: string) => PiModel | undefined;
+  };
+  const piModel = resolvePiModel(pi.getModel, model, opts);
+  if (piModel === null) return null;
+  return {
+    contextWindow:
+      typeof piModel.contextWindow === 'number' && Number.isFinite(piModel.contextWindow)
+        ? piModel.contextWindow
+        : null,
+    maxTokens:
+      typeof piModel.maxTokens === 'number' && Number.isFinite(piModel.maxTokens)
+        ? piModel.maxTokens
+        : null,
+  };
+}
+
 /**
  * Single non-streaming completion. Tier 1: thin shim, no caching, no retry.
  * Tier 2 will swap to pi-ai's streaming API and emit ArtifactEvents directly.
@@ -218,19 +260,12 @@ export async function complete(
       },
     ) => Promise<PiAssistantMessage>;
   };
-
-  let piModel = pi.getModel(model.provider, model.modelId);
-  if (!piModel) {
-    if (opts.wire !== undefined) {
-      piModel = synthesizeWireModel(model.provider, model.modelId, opts.wire, opts.baseUrl);
-    } else if (model.provider === 'openrouter') {
-      piModel = synthesizeOpenRouterModel(model.modelId);
-    } else {
-      throw new CodesignError(
-        `Unknown model ${model.provider}:${model.modelId}`,
-        ERROR_CODES.PROVIDER_MODEL_UNKNOWN,
-      );
-    }
+  const piModel = resolvePiModel(pi.getModel, model, opts);
+  if (piModel === null) {
+    throw new CodesignError(
+      `Unknown model ${model.provider}:${model.modelId}`,
+      ERROR_CODES.PROVIDER_MODEL_UNKNOWN,
+    );
   }
 
   const piOpts: {

@@ -5,6 +5,7 @@ import { type CSSProperties, useEffect } from 'react';
 import { type HubTab, useCodesignStore } from '../store';
 import { LanguageToggle } from './LanguageToggle';
 import { ModelSwitcher } from './ModelSwitcher';
+import { ModelUsageBadge } from './ModelUsageBadge';
 import { ThemeToggle } from './ThemeToggle';
 
 const dragStyle = { WebkitAppRegion: 'drag' } as CSSProperties;
@@ -138,6 +139,7 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-[var(--space-3)]" style={noDragStyle}>
+        <ModelUsageBadge />
         <ModelSwitcher variant="topbar" />
         {unreadErrorCount > 0 ? (
           <button

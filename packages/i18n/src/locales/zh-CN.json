@@ -366,6 +366,8 @@
       "beta": "测试版",
       "checkForUpdatesOnStartup": "启动时检查更新",
       "checkForUpdatesOnStartupHint": "启动 30 秒后自动检查新版本。",
+      "autoContinueIncompleteTodos": "自动继续未完成清单",
+      "autoContinueIncompleteTodosHint": "如果某次运行结束时待办仍未全部勾选，自动再发起一次静默续跑来完成剩余工作。",
       "timeout": "生成超时",
       "timeoutHint": "超过该秒数后会中止生成请求。",
       "timeoutSeconds": "{{value}} 秒",
@@ -489,7 +491,13 @@
     "hubLabel": "我的设计",
     "settingsLabel": "设置",
     "closeSettings": "关闭设置",
-    "unreadErrors": "{{count}} 个未读错误"
+    "unreadErrors": "{{count}} 个未读错误",
+    "usage": {
+      "contextWindow": "上下文窗口",
+      "apiUsage": "API 用量",
+      "lastRequest": "最近一次请求",
+      "tokensOnly": "显示最近一次请求的 token 用量"
+    }
   },
   "theme": {
     "toggleAria": "切换主题",

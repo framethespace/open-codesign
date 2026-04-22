@@ -2,6 +2,18 @@
 
 All notable changes to Open CoDesign are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Top-bar usage badge** — the desktop app now shows per-run context-window usage, token totals, and provider cost in USD next to the model picker, with a hover panel for the full breakdown.
+- **Automatic checklist continuation** — if an agent run ends with unchecked `set_todos` items, Open CoDesign can now send one silent follow-up to finish the remaining work. This is enabled by default and can be turned off in Settings → Advanced.
+
+### Changed
+
+- **Preview fallback behavior** — malformed JSX/HTML artifacts no longer replace the last good preview during live updates or final snapshot writes. The canvas keeps the last valid render when possible and shows a clearer invalid-artifact state when there is no good fallback.
+- **Usage persistence** — the latest usage snapshot is now stored per design, so renderer reloads and preview crashes no longer wipe the visible usage badge.
+
 ## [0.1.1] — 2026-04-21
 
 Post-v0.1.0 maintenance release. No breaking changes. Focused on runtime correctness, release-pipeline polish, and prompt quality.

@@ -44,6 +44,7 @@ describe('readPersisted()', () => {
       updateChannel: 'stable',
       generationTimeoutSec: 1200,
       checkForUpdatesOnStartup: true,
+      autoContinueIncompleteTodos: true,
       dismissedUpdateVersion: '',
       diagnosticsLastReadTs: 0,
     });
@@ -130,6 +131,7 @@ describe('preferences v4 schema fields', () => {
     );
     const prefs = await readPersisted();
     expect(prefs.checkForUpdatesOnStartup).toBe(true);
+    expect(prefs.autoContinueIncompleteTodos).toBe(true);
     expect(prefs.dismissedUpdateVersion).toBe('');
   });
 
@@ -141,6 +143,7 @@ describe('preferences v4 schema fields', () => {
         updateChannel: 'stable',
         generationTimeoutSec: 1200,
         checkForUpdatesOnStartup: true,
+        autoContinueIncompleteTodos: true,
         dismissedUpdateVersion: '',
       }),
     );
@@ -155,5 +158,33 @@ describe('preferences v4 schema fields', () => {
     if (!lastCall) throw new Error('writeFile was not called');
     const written = JSON.parse(lastCall[1] as string) as { dismissedUpdateVersion: string };
     expect(written.dismissedUpdateVersion).toBe('0.2.1');
+  });
+
+  it('round-trips autoContinueIncompleteTodos through preferences:v1:update', async () => {
+    readFileMock.mockResolvedValueOnce(
+      JSON.stringify({
+        schemaVersion: 6,
+        updateChannel: 'stable',
+        generationTimeoutSec: 1200,
+        checkForUpdatesOnStartup: true,
+        autoContinueIncompleteTodos: true,
+        dismissedUpdateVersion: '',
+        diagnosticsLastReadTs: 0,
+      }),
+    );
+    const updated = await (
+      handlers['preferences:v1:update'] as (_e: null, raw: unknown) => Promise<unknown>
+    )(null, { autoContinueIncompleteTodos: false });
+    expect((updated as { autoContinueIncompleteTodos: boolean }).autoContinueIncompleteTodos).toBe(
+      false,
+    );
+
+    const writeFileMock = vi.mocked(writeFile);
+    const lastCall = writeFileMock.mock.calls.at(-1);
+    if (!lastCall) throw new Error('writeFile was not called');
+    const written = JSON.parse(lastCall[1] as string) as {
+      autoContinueIncompleteTodos: boolean;
+    };
+    expect(written.autoContinueIncompleteTodos).toBe(false);
   });
 });

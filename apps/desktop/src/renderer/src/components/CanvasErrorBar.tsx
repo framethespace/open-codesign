@@ -7,8 +7,16 @@ import { useCodesignStore } from '../store';
  * from broken snapshots surface as "Inline Babel script" — the user can't
  * do anything about them except regenerate, so say that plainly.
  */
-function humanizeError(raw: string, t: (k: string, d?: Record<string, unknown>) => string): string {
-  if (/Inline Babel script/i.test(raw) || /Unexpected token/.test(raw)) {
+export function humanizePreviewError(
+  raw: string,
+  t: (k: string, d?: Record<string, unknown>) => string,
+): string {
+  if (
+    raw === 'ARTIFACT_INVALID_BROKEN_JSX' ||
+    /Inline Babel script/i.test(raw) ||
+    /Unexpected token/.test(raw) ||
+    /Expected corresponding JSX closing tag/i.test(raw)
+  ) {
     return t('preview.error.brokenJsx', {
       defaultValue:
         '此设计的代码有语法错误，可能是早期版本保存的不完整内容。重新生成或编辑修复即可。',
@@ -29,7 +37,7 @@ export function CanvasErrorBar() {
   if (errors.length === 0) return null;
   const latest = errors[errors.length - 1];
   if (!latest) return null;
-  const friendly = humanizeError(latest, t);
+  const friendly = humanizePreviewError(latest, t);
   return (
     <div
       role="alert"

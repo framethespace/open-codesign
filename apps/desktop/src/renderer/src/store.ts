@@ -253,10 +253,15 @@ interface CodesignState {
    *  `useCodesignStore.setState({ autoPolishEnabled: true })` from devtools. */
   autoPolishEnabled: boolean;
   autoPolishFired: Set<string>;
+  /** One automatic "finish the remaining checklist" follow-up per explicit
+   *  user prompt. Cleared when the user sends a new non-silent prompt for
+   *  that design, so we never get stuck in an infinite auto-resume loop. */
+  autoContinueIncompleteFired: Set<string>;
   /** Fire the canned "deepen this design" follow-up prompt once per design,
    *  if the condition is met (first round succeeded, no prior polish). Call
    *  from useAgentStream's agent_end handler. */
   tryAutoPolish: (designId: string, locale: string) => void;
+  tryAutoContinueIncomplete: (designId: string, remainingItems: string[]) => boolean;
   cancelGeneration: () => void;
   retryLastPrompt: () => Promise<void>;
   applyInlineComment: (comment: string) => Promise<void>;
@@ -401,6 +406,7 @@ export interface CommentBubbleAnchor {
 }
 
 const THEME_STORAGE_KEY = 'open-codesign:theme';
+const USAGE_STORAGE_KEY = 'open-codesign:usage-by-design';
 
 // PreviewPane keeps an iframe per recently-visited design alive so switching
 // back is instant. Bound the pool so memory stays small for users with lots
@@ -479,6 +485,55 @@ function persistTheme(theme: Theme): void {
   }
 }
 
+function readUsageCache(): Record<string, UsageSnapshot> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(USAGE_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return {};
+    const out: Record<string, UsageSnapshot> = {};
+    for (const [designId, value] of Object.entries(parsed)) {
+      if (!value || typeof value !== 'object') continue;
+      const { usage } = coerceUsageSnapshot(value as Record<string, unknown>);
+      out[designId] = usage;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function readPersistedUsage(designId: string | null): UsageSnapshot | null {
+  if (!designId) return null;
+  const cache = readUsageCache();
+  return cache[designId] ?? null;
+}
+
+function writeUsageCache(cache: Record<string, UsageSnapshot>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(USAGE_STORAGE_KEY, JSON.stringify(cache));
+  } catch {
+    // localStorage unavailable
+  }
+}
+
+function persistUsageSnapshot(designId: string | null, usage: UsageSnapshot | null): void {
+  if (!designId || usage === null) return;
+  const cache = readUsageCache();
+  cache[designId] = usage;
+  writeUsageCache(cache);
+}
+
+function clearPersistedUsage(designId: string | null): void {
+  if (!designId) return;
+  const cache = readUsageCache();
+  if (!(designId in cache)) return;
+  delete cache[designId];
+  writeUsageCache(cache);
+}
+
 function newId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -539,6 +594,12 @@ function looksRunnableArtifact(src: string): boolean {
   const pcloses = (trimmed.match(/\)/g) ?? []).length;
   if (Math.abs(popens - pcloses) > 2) return false;
   return true;
+}
+
+const INVALID_PREVIEW_ARTIFACT_ERROR = 'ARTIFACT_INVALID_BROKEN_JSX';
+
+function isPreviewableArtifact(src: string | null | undefined): src is string {
+  return typeof src === 'string' && looksRunnableArtifact(src);
 }
 
 function autoNameFromPrompt(prompt: string): string {
@@ -785,12 +846,14 @@ function applyGenerateSuccess(
   designIdAtStart: string | null,
 ): void {
   const firstArtifact = result.artifacts[0];
+  const nextArtifactContent = firstArtifact?.content;
+  const previewableArtifact = isPreviewableArtifact(nextArtifactContent) ? nextArtifactContent : null;
   const assistantMessage = result.message || tr('common.done');
   const { usage, rejected: rejectedUsageFields } = coerceUsageSnapshot(result);
   let didApply = false;
   finishIfCurrent(set, generationId, (_state) => {
     didApply = true;
-    const nextHtml = firstArtifact?.content ?? _state.previewHtml;
+    const nextHtml = previewableArtifact ?? _state.previewHtml;
     const pool =
       _state.currentDesignId !== null && nextHtml !== null
         ? recordPreviewInPool(
@@ -811,18 +874,22 @@ function applyGenerateSuccess(
       lastUsage: usage,
     };
   });
+  persistUsageSnapshot(designIdAtStart, usage);
   // If the user switched designs mid-generation, didApply is false but we
   // still want the fresh artifact in the pool so the design they generated
   // for shows the new content the next time they switch back to it.
-  if (!didApply && firstArtifact?.content && designIdAtStart !== null) {
+  if (!didApply && previewableArtifact && designIdAtStart !== null) {
     const state = get();
     const pool = recordPreviewInPool(
       state.previewHtmlByDesign,
       state.recentDesignIds,
       designIdAtStart,
-      firstArtifact.content,
+      previewableArtifact,
     );
     set({ previewHtmlByDesign: pool.cache, recentDesignIds: pool.recent });
+  }
+  if (nextArtifactContent && !previewableArtifact) {
+    get().pushIframeError(INVALID_PREVIEW_ARTIFACT_ERROR);
   }
   if (didApply) {
     // Workstream G — auto-open the generated file as a tab so the user sees
@@ -965,7 +1032,7 @@ function buildPromptRequest(
   const prompt = input.prompt.trim();
   if (!prompt) return null;
   const refUrl = normalizeReferenceUrl(input.referenceUrl ?? storeReferenceUrl);
-  return {
+      return {
     prompt,
     attachments: uniqueFiles(input.attachments ?? storeInputFiles),
     ...(refUrl ? { referenceUrl: refUrl } : {}),
@@ -1043,6 +1110,7 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
   toastMessage: null,
   autoPolishEnabled: false,
   autoPolishFired: new Set<string>(),
+  autoContinueIncompleteFired: new Set<string>(),
   tryAutoPolish: (designId, locale) => {
     const s = get();
     if (!s.autoPolishEnabled) return;
@@ -1076,6 +1144,32 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
       const prompt = pickPolishPrompt(locale);
       void get().sendPrompt({ prompt, silent: true });
     });
+  },
+  tryAutoContinueIncomplete: (designId, remainingItems) => {
+    const s = get();
+    if (remainingItems.length === 0) return false;
+    if (s.isGenerating) return false;
+    if (s.autoContinueIncompleteFired.has(designId)) return false;
+    const nextFired = new Set(s.autoContinueIncompleteFired);
+    nextFired.add(designId);
+    set({ autoContinueIncompleteFired: nextFired });
+    const remainingBlock = remainingItems.map((item) => `- ${item}`).join('\n');
+    const prompt = [
+      'Continue the current design from the existing index.html.',
+      'Finish every unfinished checklist item from the latest set_todos update without redoing completed work.',
+      '',
+      'Remaining checklist items:',
+      remainingBlock,
+      '',
+      'Requirements:',
+      '- preserve all completed sections unless a remaining item depends on a small fix there',
+      '- focus only on the unfinished items',
+      '- call set_todos again as items complete',
+      '- only finish when the checklist is fully completed or you hit a concrete blocker',
+      '- if blocked, explain the blocker clearly in assistant text before ending',
+    ].join('\n');
+    void get().sendPrompt({ prompt, silent: true });
+    return true;
   },
 
   theme: readInitialTheme(),
@@ -1268,6 +1362,11 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
 
     const generationId = newId();
     const designIdAtStart = get().currentDesignId;
+    if (designIdAtStart && !input.silent && get().autoContinueIncompleteFired.has(designIdAtStart)) {
+      const nextFired = new Set(get().autoContinueIncompleteFired);
+      nextFired.delete(designIdAtStart);
+      set({ autoContinueIncompleteFired: nextFired });
+    }
     set(() => ({
       isGenerating: true,
       activeGenerationId: generationId,
@@ -1453,10 +1552,14 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
         attachments,
       });
       const firstArtifact = result.artifacts[0];
+      const nextArtifactContent = firstArtifact?.content;
+      const previewableArtifact = isPreviewableArtifact(nextArtifactContent)
+        ? nextArtifactContent
+        : null;
       const assistantText = result.message || tr('common.applied');
       const { usage, rejected: rejectedUsageFields } = coerceUsageSnapshot(result);
       set((s) => {
-        const nextHtml = firstArtifact?.content ?? s.previewHtml;
+        const nextHtml = previewableArtifact ?? s.previewHtml;
         const pool =
           s.currentDesignId !== null && nextHtml !== null
             ? recordPreviewInPool(
@@ -1476,6 +1579,10 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
           lastUsage: usage,
         };
       });
+      persistUsageSnapshot(designIdAtStart, usage);
+      if (nextArtifactContent && !previewableArtifact) {
+        get().pushIframeError(INVALID_PREVIEW_ARTIFACT_ERROR);
+      }
       if (designIdAtStart) {
         void get().appendChatMessage({
           designId: designIdAtStart,
@@ -1656,6 +1763,7 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
       set({
         currentDesignId: design.id,
         previewHtml: null,
+        lastUsage: readPersistedUsage(design.id),
         errorMessage: null,
         iframeErrors: [],
         selectedElement: null,
@@ -1722,6 +1830,7 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
       set({
         currentDesignId: id,
         previewHtml: cachedHtml,
+        lastUsage: readPersistedUsage(id),
         previewHtmlByDesign: incomingPool.cache,
         recentDesignIds: incomingPool.recent,
         errorMessage: null,
@@ -1771,15 +1880,22 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
     try {
       const snapshots = await window.codesign.snapshots.list(id);
       const latest = snapshots[0] ?? null;
-      const html = latest ? latest.artifactSource : null;
-      const incomingPool = recordPreviewInPool(outgoingPool.cache, outgoingPool.recent, id, html);
+      const html = latest?.artifactSource ?? null;
+      const previewableHtml = isPreviewableArtifact(html) ? html : null;
+      const incomingPool = recordPreviewInPool(
+        outgoingPool.cache,
+        outgoingPool.recent,
+        id,
+        previewableHtml,
+      );
       set({
         currentDesignId: id,
-        previewHtml: html,
+        previewHtml: previewableHtml,
+        lastUsage: readPersistedUsage(id),
         previewHtmlByDesign: incomingPool.cache,
         recentDesignIds: incomingPool.recent,
         errorMessage: null,
-        iframeErrors: [],
+        iframeErrors: html && !previewableHtml ? [INVALID_PREVIEW_ARTIFACT_ERROR] : [],
         selectedElement: null,
         lastPromptInput: null,
         designsViewOpen: false,
@@ -1790,8 +1906,8 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
         commentsLoaded: false,
         commentBubble: null,
         currentSnapshotId: null,
-        canvasTabs: latest ? [FILES_TAB, { kind: 'file', path: 'index.html' }] : [FILES_TAB],
-        activeCanvasTab: latest ? 1 : 0,
+        canvasTabs: previewableHtml ? [FILES_TAB, { kind: 'file', path: 'index.html' }] : [FILES_TAB],
+        activeCanvasTab: previewableHtml ? 1 : 0,
       });
       void get().loadChatForCurrentDesign();
       void get().loadCommentsForCurrentDesign();
@@ -1864,10 +1980,16 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
     }
     try {
       await window.codesign.snapshots.softDeleteDesign(id);
+      clearPersistedUsage(id);
       if (get().autoPolishFired.has(id)) {
         const nextFired = new Set(get().autoPolishFired);
         nextFired.delete(id);
         set({ autoPolishFired: nextFired });
+      }
+      if (get().autoContinueIncompleteFired.has(id)) {
+        const nextFired = new Set(get().autoContinueIncompleteFired);
+        nextFired.delete(id);
+        set({ autoContinueIncompleteFired: nextFired });
       }
       const wasCurrent = get().currentDesignId === id;
       await get().loadDesigns();
@@ -1876,6 +1998,7 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
         set({
           currentDesignId: null,
           previewHtml: null,
+          lastUsage: null,
           canvasTabs: [FILES_TAB],
           activeCanvasTab: 0,
         });
@@ -2055,6 +2178,7 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
   },
 
   setPreviewHtmlFromAgent({ designId, content }) {
+    if (!isPreviewableArtifact(content)) return;
     const state = get();
     // Only adopt the live html when the event's design matches what the user
     // is looking at OR what is actively generating. This prevents a background
@@ -2086,6 +2210,10 @@ export const useCodesignStore = create<CodesignState>((set, get) => ({
   },
 
   setPreviewHtml(content: string) {
+    if (!isPreviewableArtifact(content)) {
+      get().pushIframeError(INVALID_PREVIEW_ARTIFACT_ERROR);
+      return;
+    }
     const state = get();
     if (state.currentDesignId === null) {
       set({ previewHtml: content });

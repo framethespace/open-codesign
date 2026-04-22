@@ -17,7 +17,7 @@ import { getLogger } from './logger';
 
 const logger = getLogger('preferences-ipc');
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 // v1 → v2: raise the abandoned 120s timeout default (which aborted real
 // agentic runs mid-loop) to 600s. Values that happen to equal the old
 // default are treated as unmigrated defaults, not user intent.
@@ -36,6 +36,7 @@ export interface Preferences {
   updateChannel: UpdateChannel;
   generationTimeoutSec: number;
   checkForUpdatesOnStartup: boolean;
+  autoContinueIncompleteTodos: boolean;
   dismissedUpdateVersion: string;
   /** Epoch ms of the last time the user opened the Diagnostics panel.
    *  Persisted so the unread-error badge doesn't flash every historical
@@ -55,6 +56,7 @@ const DEFAULTS: Preferences = {
   // in Settings → Advanced.
   generationTimeoutSec: 1200,
   checkForUpdatesOnStartup: true,
+  autoContinueIncompleteTodos: true,
   dismissedUpdateVersion: '',
   diagnosticsLastReadTs: 0,
 };
@@ -85,6 +87,10 @@ export async function readPersisted(): Promise<Preferences> {
         typeof parsed.checkForUpdatesOnStartup === 'boolean'
           ? parsed.checkForUpdatesOnStartup
           : DEFAULTS.checkForUpdatesOnStartup,
+      autoContinueIncompleteTodos:
+        typeof parsed.autoContinueIncompleteTodos === 'boolean'
+          ? parsed.autoContinueIncompleteTodos
+          : DEFAULTS.autoContinueIncompleteTodos,
       dismissedUpdateVersion:
         typeof parsed.dismissedUpdateVersion === 'string'
           ? parsed.dismissedUpdateVersion
@@ -142,6 +148,15 @@ function parsePreferences(raw: unknown): Partial<Preferences> {
       );
     }
     out.checkForUpdatesOnStartup = r['checkForUpdatesOnStartup'];
+  }
+  if (r['autoContinueIncompleteTodos'] !== undefined) {
+    if (typeof r['autoContinueIncompleteTodos'] !== 'boolean') {
+      throw new CodesignError(
+        'autoContinueIncompleteTodos must be a boolean',
+        ERROR_CODES.IPC_BAD_INPUT,
+      );
+    }
+    out.autoContinueIncompleteTodos = r['autoContinueIncompleteTodos'];
   }
   if (r['dismissedUpdateVersion'] !== undefined) {
     if (typeof r['dismissedUpdateVersion'] !== 'string') {

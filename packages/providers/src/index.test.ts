@@ -9,7 +9,7 @@ vi.mock('@mariozechner/pi-ai', () => ({
   completeSimple: (...args: unknown[]) => completeSimpleMock(...args),
 }));
 
-import { complete } from './index';
+import { complete, getModelUsageMetadata } from './index';
 
 const MODEL: ModelRef = { provider: 'openai', modelId: 'gpt-4o' };
 
@@ -196,5 +196,47 @@ describe('complete', () => {
     );
 
     expect(result.content).toBe('ok');
+  });
+});
+
+describe('getModelUsageMetadata', () => {
+  it('returns registry-backed context limits for known models', async () => {
+    getModelMock.mockReturnValue({
+      id: 'gpt-4o',
+      api: 'openai-completions',
+      provider: 'openai',
+      contextWindow: 128000,
+      maxTokens: 16384,
+    });
+
+    await expect(getModelUsageMetadata(MODEL)).resolves.toEqual({
+      contextWindow: 128000,
+      maxTokens: 16384,
+    });
+  });
+
+  it('synthesizes fallback metadata for unknown openrouter models', async () => {
+    getModelMock.mockReturnValue(undefined);
+
+    await expect(
+      getModelUsageMetadata({ provider: 'openrouter', modelId: 'qwen/qwen3-coder:free' }),
+    ).resolves.toEqual({
+      contextWindow: 131072,
+      maxTokens: 131072,
+    });
+  });
+
+  it('uses wire metadata fallback for custom providers', async () => {
+    getModelMock.mockReturnValue(undefined);
+
+    await expect(
+      getModelUsageMetadata(
+        { provider: 'codex-proxy', modelId: 'gpt-5.4-mini' },
+        { wire: 'openai-responses', baseUrl: 'https://proxy.example.test/v1' },
+      ),
+    ).resolves.toEqual({
+      contextWindow: 131072,
+      maxTokens: 131072,
+    });
   });
 });

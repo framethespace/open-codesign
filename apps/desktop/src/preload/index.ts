@@ -28,11 +28,18 @@ import type { CodexOAuthStatus } from '../main/codex-oauth-ipc';
 import type {
   ConnectionTestError,
   ConnectionTestResult,
+  ModelMetadataResponse,
   ModelsListResponse,
   TestEndpointResponse,
 } from '../main/connection-ipc';
 
-export type { ConnectionTestError, ConnectionTestResult, ModelsListResponse, TestEndpointResponse };
+export type {
+  ConnectionTestError,
+  ConnectionTestResult,
+  ModelMetadataResponse,
+  ModelsListResponse,
+  TestEndpointResponse,
+};
 export type { CodexOAuthStatus };
 
 export interface ValidateKeyResult {
@@ -146,6 +153,7 @@ export interface Preferences {
   updateChannel: UpdateChannel;
   generationTimeoutSec: number;
   checkForUpdatesOnStartup: boolean;
+  autoContinueIncompleteTodos: boolean;
   dismissedUpdateVersion: string;
   diagnosticsLastReadTs: number;
 }
@@ -401,6 +409,8 @@ const api = {
     }) => ipcRenderer.invoke('models:v1:list', input) as Promise<ModelsListResponse>,
     listForProvider: (providerId: string) =>
       ipcRenderer.invoke('models:v1:list-for-provider', providerId) as Promise<ModelsListResponse>,
+    getMetadata: (input: { providerId: string; modelId: string }) =>
+      ipcRenderer.invoke('models:v1:get-metadata', input) as Promise<ModelMetadataResponse>,
   },
   snapshots: {
     listDesigns: () =>

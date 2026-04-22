@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { getModelUsageMetadata } from '@open-codesign/providers';
 import {
   BUILTIN_PROVIDERS,
   CodesignError,
@@ -36,6 +37,11 @@ interface ModelsListPayloadV1 {
   baseUrl: string;
 }
 
+interface ModelMetadataPayloadV1 {
+  providerId: string;
+  modelId: string;
+}
+
 export interface ConnectionTestResult {
   ok: true;
 }
@@ -54,6 +60,19 @@ export type ModelsListResponse =
   | {
       ok: false;
       code: 'IPC_BAD_INPUT' | 'NETWORK' | 'HTTP' | 'PARSE';
+      message: string;
+      hint: string;
+    };
+
+export type ModelMetadataResponse =
+  | {
+      ok: true;
+      contextWindow: number | null;
+      maxTokens: number | null;
+    }
+  | {
+      ok: false;
+      code: 'IPC_BAD_INPUT';
       message: string;
       hint: string;
     };
@@ -106,6 +125,26 @@ function parseModelsListPayload(raw: unknown): ModelsListPayloadV1 {
     provider: r['provider'],
     apiKey: r['apiKey'].trim(),
     baseUrl: r['baseUrl'].trim(),
+  };
+}
+
+function parseModelMetadataPayload(raw: unknown): ModelMetadataPayloadV1 {
+  if (typeof raw !== 'object' || raw === null) {
+    throw new CodesignError(
+      'models:v1:get-metadata expects an object payload',
+      ERROR_CODES.IPC_BAD_INPUT,
+    );
+  }
+  const r = raw as Record<string, unknown>;
+  if (typeof r['providerId'] !== 'string' || r['providerId'].trim().length === 0) {
+    throw new CodesignError('providerId must be a non-empty string', ERROR_CODES.IPC_BAD_INPUT);
+  }
+  if (typeof r['modelId'] !== 'string' || r['modelId'].trim().length === 0) {
+    throw new CodesignError('modelId must be a non-empty string', ERROR_CODES.IPC_BAD_INPUT);
+  }
+  return {
+    providerId: r['providerId'].trim(),
+    modelId: r['modelId'].trim(),
   };
 }
 
@@ -661,6 +700,64 @@ export function registerConnectionIpc(): void {
       }
       setCachedModels(raw, entry.baseUrl, apiKey, ids);
       return { ok: true, models: ids };
+    },
+  );
+
+  ipcMain.handle(
+    'models:v1:get-metadata',
+    async (_e, raw: unknown): Promise<ModelMetadataResponse> => {
+      let payload: ModelMetadataPayloadV1;
+      try {
+        payload = parseModelMetadataPayload(raw);
+      } catch (err) {
+        return {
+          ok: false,
+          code: 'IPC_BAD_INPUT',
+          message: err instanceof Error ? err.message : 'Invalid model metadata payload',
+          hint: 'Internal error — missing active provider or model id',
+        };
+      }
+
+      const cfg = getCachedConfig();
+      if (cfg === null) {
+        return {
+          ok: false,
+          code: 'IPC_BAD_INPUT',
+          message: 'No configuration loaded',
+          hint: 'Complete onboarding first',
+        };
+      }
+
+      const entry =
+        cfg.providers[payload.providerId] ??
+        (isSupportedOnboardingProvider(payload.providerId)
+          ? BUILTIN_PROVIDERS[payload.providerId]
+          : undefined);
+      if (entry === undefined) {
+        return {
+          ok: false,
+          code: 'IPC_BAD_INPUT',
+          message: `Provider "${payload.providerId}" not found in config`,
+          hint: 'Re-add the provider from Settings',
+        };
+      }
+
+      const meta = await getModelUsageMetadata(
+        {
+          provider: payload.providerId,
+          modelId: payload.modelId,
+        },
+        {
+          wire: entry.wire,
+          baseUrl: entry.baseUrl,
+        },
+      );
+
+      return {
+        ok: true,
+        contextWindow: meta?.contextWindow ?? null,
+        maxTokens: meta?.maxTokens ?? null,
+      };
     },
   );
 

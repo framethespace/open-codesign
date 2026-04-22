@@ -16,6 +16,11 @@ import { useEffect, useRef } from 'react';
 import type { AgentStreamEvent } from '../../../preload/index';
 import { useCodesignStore } from '../store';
 
+interface TodoProgressItem {
+  text: string;
+  status: 'pending' | 'in_progress' | 'completed';
+}
+
 interface PendingPersist {
   /** Resolves to the persisted row's seq, or null if the append failed. */
   seqPromise: Promise<number | null>;
@@ -39,14 +44,52 @@ interface InFlightTurn {
    *  arrived yet. Drained at tool_call_result and any leftovers are flipped
    *  to 'done' at turn_end. */
   pendingTools: PendingPersist[];
+  latestTodos: TodoProgressItem[];
+}
+
+export function extractTodoProgress(args: Record<string, unknown> | undefined): TodoProgressItem[] {
+  const raw = (args?.['todos'] as unknown) ?? (args?.['items'] as unknown) ?? null;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((it): TodoProgressItem | null => {
+      if (typeof it !== 'object' || it === null) return null;
+      const obj = it as Record<string, unknown>;
+      const text =
+        typeof obj['text'] === 'string'
+          ? obj['text']
+          : typeof obj['content'] === 'string'
+            ? obj['content']
+            : null;
+      if (!text) return null;
+      const status: TodoProgressItem['status'] =
+        obj['status'] === 'completed' || obj['checked'] === true
+          ? 'completed'
+          : obj['status'] === 'in_progress'
+            ? 'in_progress'
+            : 'pending';
+      return { text, status };
+    })
+    .filter((item): item is TodoProgressItem => item !== null);
+}
+
+export function summarizeIncompleteTodos(todos: TodoProgressItem[]): {
+  remaining: number;
+  total: number;
+} | null {
+  if (todos.length === 0) return null;
+  const remaining = todos.filter((todo) => todo.status !== 'completed').length;
+  if (remaining === 0) return null;
+  return { remaining, total: todos.length };
 }
 
 export function useAgentStream(): void {
   const appendChatMessage = useCodesignStore((s) => s.appendChatMessage);
+  const pushToast = useCodesignStore((s) => s.pushToast);
   const setStreamingAssistantText = useCodesignStore((s) => s.setStreamingAssistantText);
   const setPreviewHtmlFromAgent = useCodesignStore((s) => s.setPreviewHtmlFromAgent);
   const updateChatToolStatus = useCodesignStore((s) => s.updateChatToolStatus);
   const persistAgentRunSnapshot = useCodesignStore((s) => s.persistAgentRunSnapshot);
+  const tryAutoContinueIncomplete = useCodesignStore((s) => s.tryAutoContinueIncomplete);
   const inFlight = useRef<InFlightTurn | null>(null);
 
   // Throttled live-preview push. iframe srcdoc reloads the whole page on every
@@ -102,6 +145,7 @@ export function useAgentStream(): void {
         textBuffer: '',
         lastPersistedText: sameRun ? previous.lastPersistedText : null,
         pendingTools: sameRun ? previous.pendingTools : [],
+        latestTodos: sameRun ? previous.latestTodos : [],
       };
       setStreamingAssistantText({ designId: event.designId, text: '' });
     };
@@ -155,6 +199,10 @@ export function useAgentStream(): void {
       const current = inFlight.current;
       const designId = event.designId;
       const toolName = event.toolName ?? 'unknown';
+      const argsObj =
+        typeof event.args === 'object' && event.args !== null
+          ? (event.args as Record<string, unknown>)
+          : {};
       // TODO: replace with rendererLogger once renderer-logger lands
       console.debug('[agent] tool_call_start', {
         generationId: event.generationId,
@@ -171,7 +219,7 @@ export function useAgentStream(): void {
         payload: {
           toolName,
           ...(event.command !== undefined ? { command: event.command } : {}),
-          args: event.args ?? {},
+          args: argsObj,
           status: 'running',
           startedAt: new Date().toISOString(),
           verbGroup: event.verbGroup ?? 'Working',
@@ -179,6 +227,9 @@ export function useAgentStream(): void {
         },
       }).then((row) => row?.seq ?? null);
       if (current) {
+        if (toolName === 'set_todos') {
+          current.latestTodos = extractTodoProgress(argsObj);
+        }
         current.pendingTools.push({
           seqPromise,
           toolName,
@@ -260,6 +311,8 @@ export function useAgentStream(): void {
     };
 
     const handleAgentEnd = (event: AgentStreamEvent) => {
+      const currentBeforeEnd = inFlight.current;
+      const incompleteTodos = summarizeIncompleteTodos(currentBeforeEnd?.latestTodos ?? []);
       // Flush any throttled fs_updated payload synchronously so the preview
       // store reflects the final html before we read it back for persistence.
       const slot = fsThrottle.current;
@@ -273,7 +326,7 @@ export function useAgentStream(): void {
         slot.lastFlushAt = Date.now();
         setPreviewHtmlFromAgent(pending);
       }
-      const finalText = inFlight.current?.lastPersistedText ?? undefined;
+      const finalText = currentBeforeEnd?.lastPersistedText ?? undefined;
       void persistAgentRunSnapshot({
         designId: event.designId,
         ...(finalText ? { finalText } : {}),
@@ -292,6 +345,28 @@ export function useAgentStream(): void {
           streamingAssistantText: null,
         });
       }
+      void (async () => {
+        const autoContinueEnabled =
+          (await window.codesign?.preferences
+            ?.get?.()
+            .then((prefs) => prefs.autoContinueIncompleteTodos)
+            .catch(() => true)) ?? true;
+        if (incompleteTodos) {
+          const remainingItems = (currentBeforeEnd?.latestTodos ?? [])
+            .filter((todo) => todo.status !== 'completed')
+            .map((todo) => todo.text);
+          const resumed = autoContinueEnabled
+            ? tryAutoContinueIncomplete(event.designId, remainingItems)
+            : false;
+          pushToast({
+            variant: 'info',
+            title: resumed ? 'Finishing remaining checklist' : 'Generation stopped early',
+            description: resumed
+              ? `${incompleteTodos.remaining} unfinished checklist items detected. Continuing automatically.`
+              : `${incompleteTodos.remaining} of ${incompleteTodos.total} checklist items are still unfinished.`,
+          });
+        }
+      })();
       // Fire the auto-polish follow-up exactly once per design. Delay so the
       // isGenerating flag and persisted assistant_text row have settled before
       // sendPrompt inspects them. The guard inside tryAutoPolish dedupes.
@@ -354,5 +429,7 @@ export function useAgentStream(): void {
     setPreviewHtmlFromAgent,
     updateChatToolStatus,
     persistAgentRunSnapshot,
+    pushToast,
+    tryAutoContinueIncomplete,
   ]);
 }
