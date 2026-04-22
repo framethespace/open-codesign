@@ -74,6 +74,11 @@ export interface PreviewLabels {
   fingerprint: string;
   message: string;
   upstream: string;
+  upstreamProvider: string;
+  upstreamStatus: string;
+  upstreamRequestId: string;
+  upstreamRetry: string;
+  upstreamBodyHead: string;
 }
 
 /**
@@ -107,16 +112,17 @@ export function formatPreview(
     const bodyHead = ctx['redacted_body_head'];
     // Mirror main-process `asString` semantics: treat both null and undefined
     // as absent so the preview omits exactly when the bundle will.
-    if (provider != null) upstreamRows.push(`Provider: ${String(provider)}`);
-    if (status != null) upstreamRows.push(`Status: ${String(status)}`);
-    if (requestId != null) upstreamRows.push(`Request-Id: ${String(requestId)}`);
-    if (retry != null) upstreamRows.push(`Retry: ${String(retry)}`);
+    if (provider != null) upstreamRows.push(`${labels.upstreamProvider}: ${String(provider)}`);
+    if (status != null) upstreamRows.push(`${labels.upstreamStatus}: ${String(status)}`);
+    if (requestId != null)
+      upstreamRows.push(`${labels.upstreamRequestId}: ${String(requestId)}`);
+    if (retry != null) upstreamRows.push(`${labels.upstreamRetry}: ${String(retry)}`);
     if (bodyHead != null) {
       const redacted = applyRedaction(String(bodyHead), opts);
       // Match main-process truncate(): append an ellipsis when cut.
       const redactedBody =
         redacted.length > BODY_HEAD_MAX ? `${redacted.slice(0, BODY_HEAD_MAX)}…` : redacted;
-      upstreamRows.push(`Body head: ${redactedBody}`);
+      upstreamRows.push(`${labels.upstreamBodyHead}: ${redactedBody}`);
     }
     if (upstreamRows.length > 0) {
       lines.push(`--- ${labels.upstream} ---`);
@@ -332,6 +338,11 @@ export function ReportEventDialog({ eventId, onClose }: ReportEventDialogProps) 
                   fingerprint: t('diagnostics.report.preview.fingerprint'),
                   message: t('diagnostics.report.preview.message'),
                   upstream: t('diagnostics.report.preview.upstream'),
+                  upstreamProvider: t('diagnostics.report.preview.upstreamProvider'),
+                  upstreamStatus: t('diagnostics.report.preview.upstreamStatus'),
+                  upstreamRequestId: t('diagnostics.report.preview.upstreamRequestId'),
+                  upstreamRetry: t('diagnostics.report.preview.upstreamRetry'),
+                  upstreamBodyHead: t('diagnostics.report.preview.upstreamBodyHead'),
                 },
               )}
             </pre>

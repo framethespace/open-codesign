@@ -806,7 +806,12 @@
         "runId": "运行 id",
         "fingerprint": "指纹",
         "message": "消息",
-        "upstream": "上游上下文"
+        "upstream": "上游上下文",
+        "upstreamProvider": "服务商",
+        "upstreamStatus": "状态码",
+        "upstreamRequestId": "请求 id",
+        "upstreamRetry": "重试次数",
+        "upstreamBodyHead": "响应体开头"
       }
     }
   },

@@ -82,6 +82,25 @@ const LABELS: PreviewLabels = {
   fingerprint: 'Fingerprint',
   message: 'Message',
   upstream: 'Upstream context',
+  upstreamProvider: 'Provider',
+  upstreamStatus: 'Status',
+  upstreamRequestId: 'Request id',
+  upstreamRetry: 'Retry',
+  upstreamBodyHead: 'Body head',
+};
+
+const LABELS_ZH: PreviewLabels = {
+  code: '错误码',
+  scope: '范围',
+  runId: '运行 id',
+  fingerprint: '指纹',
+  message: '消息',
+  upstream: '上游上下文',
+  upstreamProvider: '服务商',
+  upstreamStatus: '状态码',
+  upstreamRequestId: '请求 id',
+  upstreamRetry: '重试次数',
+  upstreamBodyHead: '响应体开头',
 };
 
 function makeEvent(overrides: Partial<DiagnosticEventRow> = {}): DiagnosticEventRow {
@@ -134,7 +153,7 @@ describe('formatPreview', () => {
     expect(out).toContain('--- Upstream context ---');
     expect(out).toContain('Provider: anthropic');
     expect(out).toContain('Status: 504');
-    expect(out).toContain('Request-Id: req_123');
+    expect(out).toContain('Request id: req_123');
     expect(out).toContain('Retry: 2');
     expect(out).toContain('Body head: {"type":"error","message":"timeout"}');
   });
@@ -184,7 +203,7 @@ describe('formatPreview', () => {
     );
     expect(out).not.toContain('Status:');
     expect(out).not.toContain('null');
-    expect(out).toContain('Request-Id: req_abc');
+    expect(out).toContain('Request id: req_abc');
   });
 
   it('omits request_id row when upstream_request_id is null', () => {
@@ -201,7 +220,7 @@ describe('formatPreview', () => {
       { includePromptText: false, includePaths: false, includeUrls: false },
       LABELS,
     );
-    expect(out).not.toContain('Request-Id:');
+    expect(out).not.toContain('Request id:');
     expect(out).not.toContain('null');
     expect(out).toContain('Status: 500');
   });
@@ -219,5 +238,29 @@ describe('formatPreview', () => {
     );
     expect(out).toContain(`Body head: ${'a'.repeat(400)}…`);
     expect(out).not.toContain('a'.repeat(401));
+  });
+
+  it('uses localized upstream labels (zh-CN)', () => {
+    const event = makeEvent({
+      scope: 'provider',
+      context: {
+        upstream_provider: 'anthropic',
+        upstream_status: 504,
+        upstream_request_id: 'req_123',
+        retry_count: 2,
+        redacted_body_head: 'payload',
+      },
+    });
+    const out = formatPreview(
+      event,
+      { includePromptText: true, includePaths: true, includeUrls: true },
+      LABELS_ZH,
+    );
+    expect(out).toContain('--- 上游上下文 ---');
+    expect(out).toContain('服务商: anthropic');
+    expect(out).toContain('状态码: 504');
+    expect(out).toContain('请求 id: req_123');
+    expect(out).toContain('重试次数: 2');
+    expect(out).toContain('响应体开头: payload');
   });
 });

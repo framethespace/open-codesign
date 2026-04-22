@@ -807,7 +807,12 @@
         "runId": "Run id",
         "fingerprint": "Fingerprint",
         "message": "Message",
-        "upstream": "Upstream context"
+        "upstream": "Upstream context",
+        "upstreamProvider": "Provider",
+        "upstreamStatus": "Status",
+        "upstreamRequestId": "Request id",
+        "upstreamRetry": "Retry",
+        "upstreamBodyHead": "Body head"
       }
     }
   },
