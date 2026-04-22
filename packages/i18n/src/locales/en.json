@@ -143,6 +143,7 @@
       "models": "Models",
       "appearance": "Appearance",
       "storage": "Storage",
+      "diagnostics": "Diagnostics",
       "advanced": "Advanced"
     },
     "shell": {
@@ -326,6 +327,22 @@
       "exportDiagnostics": "Export diagnostics",
       "diagnosticsExported": "Exported to {{path}}",
       "diagnosticsExportFailed": "Could not export diagnostics"
+    },
+    "diagnostics": {
+      "title": "Diagnostics",
+      "description": "Review recent errors. Report a bug with full context attached.",
+      "openLogFolder": "Open log folder",
+      "exportBundle": "Export diagnostic bundle",
+      "showTransient": "Show retried-then-succeeded errors",
+      "empty": "No diagnostic events recorded yet.",
+      "report": "Report",
+      "column": {
+        "time": "Time",
+        "code": "Code",
+        "scope": "Scope",
+        "runId": "Run id",
+        "message": "Message"
+      }
     },
     "advanced": {
       "updateChannel": "Update channel",

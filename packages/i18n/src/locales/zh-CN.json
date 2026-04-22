@@ -144,6 +144,7 @@
       "models": "模型",
       "appearance": "外观",
       "storage": "存储",
+      "diagnostics": "诊断",
       "advanced": "高级"
     },
     "shell": {
@@ -329,6 +330,22 @@
       "exportDiagnostics": "导出诊断包",
       "diagnosticsExported": "已导出至 {{path}}",
       "diagnosticsExportFailed": "无法导出诊断包"
+    },
+    "diagnostics": {
+      "title": "诊断",
+      "description": "查看最近的错误，附带完整上下文上报。",
+      "openLogFolder": "打开日志文件夹",
+      "exportBundle": "导出诊断包",
+      "showTransient": "显示重试后成功的错误",
+      "empty": "暂无诊断事件。",
+      "report": "上报",
+      "column": {
+        "time": "时间",
+        "code": "错误码",
+        "scope": "范围",
+        "runId": "运行 id",
+        "message": "消息"
+      }
     },
     "advanced": {
       "updateChannel": "更新通道",

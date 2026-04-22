@@ -6,6 +6,7 @@ import {
 } from '@open-codesign/shared';
 import { Button } from '@open-codesign/ui';
 import {
+  AlertCircle,
   AlertTriangle,
   Check,
   CheckCircle,
@@ -27,13 +28,15 @@ import { recordAction } from '../lib/action-timeline';
 import { useCodesignStore } from '../store';
 import { AddCustomProviderModal } from './AddCustomProviderModal';
 import { ChatgptLoginCard } from './ChatgptLoginCard';
+import { DiagnosticsPanel } from './settings/DiagnosticsPanel';
 
-type Tab = 'models' | 'appearance' | 'storage' | 'advanced';
+type Tab = 'models' | 'appearance' | 'storage' | 'diagnostics' | 'advanced';
 
 const TABS: ReadonlyArray<{ id: Tab; icon: typeof Cpu }> = [
   { id: 'models', icon: Cpu },
   { id: 'appearance', icon: Palette },
   { id: 'storage', icon: FolderOpen },
+  { id: 'diagnostics', icon: AlertCircle },
   { id: 'advanced', icon: Sliders },
 ];
 
@@ -1818,6 +1821,7 @@ export function Settings() {
           {tab === 'models' ? <ModelsTab /> : null}
           {tab === 'appearance' ? <AppearanceTab /> : null}
           {tab === 'storage' ? <StorageTab /> : null}
+          {tab === 'diagnostics' ? <DiagnosticsPanel /> : null}
           {tab === 'advanced' ? <AdvancedTab /> : null}
         </section>
       </div>
