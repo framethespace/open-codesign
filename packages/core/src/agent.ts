@@ -44,8 +44,8 @@ import {
   type LoadedSkill,
   type ModelRef,
   type StoredDesignSystem,
-  canonicalBaseUrl,
   type WireApi,
+  canonicalBaseUrl,
 } from '@open-codesign/shared';
 import type { TSchema } from '@sinclair/typebox';
 import { buildTransformContext } from './context-prune.js';
