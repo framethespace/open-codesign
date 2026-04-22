@@ -31,10 +31,14 @@ import { registerAppMenu } from './app-menu';
 import { showBootDialog, writeBootErrorSync } from './boot-fallback';
 import { registerCanvasIpc } from './canvas-ipc';
 import { registerChatMessagesIpc, registerChatMessagesUnavailableIpc } from './chat-messages-ipc';
-import { runCodexGenerate } from './codex-generate';
-import { registerCodexOAuthIpc } from './codex-oauth-ipc';
-import { generateCodexTitle } from './codex-title';
+import {
+  CHATGPT_CODEX_PROVIDER_ID,
+  getCodexTokenStore,
+  migrateStaleCodexEntryIfNeeded,
+  registerCodexOAuthIpc,
+} from './codex-oauth-ipc';
 import { registerCommentsIpc, registerCommentsUnavailableIpc } from './comments-ipc';
+import { configDir } from './config';
 import { registerConnectionIpc } from './connection-ipc';
 import { scanDesignSystem } from './design-system';
 import { registerDiagnosticsIpc } from './diagnostics-ipc';
@@ -53,10 +57,13 @@ import {
   registerOnboardingIpc,
   setDesignSystem,
 } from './onboarding-ipc';
+import { isAllowedExternalUrl } from './open-external';
 import { readPersisted as readPreferences, registerPreferencesIpc } from './preferences-ipc';
 import { preparePromptContext } from './prompt-context';
 import { createProviderContextStore } from './provider-context';
 import { resolveActiveModel } from './provider-settings';
+import { cleanupStaleTmps } from './reported-fingerprints';
+import { resolveActiveApiKey, resolveApiKeyWithKeylessFallback } from './resolve-api-key';
 import { withRun } from './runContext';
 import { pruneDiagnosticEvents, recordDiagnosticEvent, safeInitSnapshotsDb } from './snapshots-db';
 import { registerSnapshotsIpc, registerSnapshotsUnavailableIpc } from './snapshots-ipc';
@@ -128,7 +135,13 @@ function createWindow(): void {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }: { url: string }) => {
-    void shell.openExternal(url);
+    // Gate `window.open(...)` through the same allowlist as
+    // `codesign:v1:open-external`, otherwise any renderer path that triggers
+    // a new-window event could coerce the main process into opening an
+    // attacker-controlled URL.
+    if (isAllowedExternalUrl(url)) {
+      void shell.openExternal(url);
+    }
     return { action: 'deny' };
   });
 
@@ -150,6 +163,20 @@ function createWindow(): void {
 
 type Database = BetterSqlite3.Database;
 
+function resolveActiveApiKeyFromState(providerId: string): Promise<string> {
+  return resolveActiveApiKey(providerId, {
+    getCodexAccessToken: () => getCodexTokenStore().getValidAccessToken(),
+    getApiKeyForProvider,
+  });
+}
+
+function resolveApiKeyForActive(providerId: string, allowKeyless: boolean): Promise<string> {
+  return resolveApiKeyWithKeylessFallback(providerId, allowKeyless, {
+    getCodexAccessToken: () => getCodexTokenStore().getValidAccessToken(),
+    getApiKeyForProvider,
+  });
+}
+
 function registerIpcHandlers(db: Database | null): void {
   const logIpc = getLogger('main:ipc');
 
@@ -164,14 +191,15 @@ function registerIpcHandlers(db: Database | null): void {
     if (db === null) return;
     const code = err instanceof CodesignError ? (err.code as string) : 'PROVIDER_UPSTREAM_ERROR';
     const stack = err instanceof Error ? err.stack : undefined;
+    const message = err instanceof Error ? err.message : String(err);
     const context = providerContext.consume(runId);
     recordDiagnosticEvent(db, {
       level: 'error',
       code,
       scope,
       runId,
-      fingerprint: computeFingerprint({ errorCode: code, stack }),
-      message: err instanceof Error ? err.message : String(err),
+      fingerprint: computeFingerprint({ errorCode: code, stack, message }),
+      message,
       stack,
       transient: false,
       ...(context !== undefined ? { context } : {}),
@@ -223,7 +251,11 @@ function registerIpcHandlers(db: Database | null): void {
           code,
           scope: 'provider',
           runId: id,
-          fingerprint: computeFingerprint({ errorCode: code, stack: syntheticFrame }),
+          fingerprint: computeFingerprint({
+            errorCode: code,
+            stack: syntheticFrame,
+            message: upstream,
+          }),
           message: upstream,
           stack: undefined,
           transient: true,
@@ -651,13 +683,14 @@ function registerIpcHandlers(db: Database | null): void {
       // the Settings UI uses for the Active badge — so the actual call cannot
       // diverge from what the user sees.
       const active = resolveActiveModel(cfg, payload.model);
+      const allowKeyless = active.allowKeyless;
       let apiKey: string;
       try {
-        apiKey = getApiKeyForProvider(active.model.provider);
-      } catch {
-        apiKey = '';
+        apiKey = await resolveApiKeyForActive(active.model.provider, allowKeyless);
+      } catch (err) {
+        inFlight.delete(id);
+        throw err;
       }
-      const allowKeyless = active.allowKeyless;
       // Once we've snapped to the canonical active provider, the renderer-supplied
       // baseUrl can no longer be trusted — it may belong to a different (stale)
       // provider and would route the active provider's API key to the wrong host.
@@ -689,8 +722,7 @@ function registerIpcHandlers(db: Database | null): void {
         modelId: active.model.modelId,
       };
       coreLogger.info('[generate] step=validate_provider', stepCtx);
-      const isChatgptCodex = active.model.provider === 'chatgpt-codex';
-      if (apiKey.length === 0 && !allowKeyless && !isChatgptCodex) {
+      if (apiKey.length === 0 && !allowKeyless) {
         coreLogger.error('[generate] step=validate_provider.fail', {
           provider: active.model.provider,
           reason: 'missing_api_key',
@@ -729,40 +761,16 @@ function registerIpcHandlers(db: Database | null): void {
       let clearTimeoutGuard: () => void = () => {};
       try {
         clearTimeoutGuard = await armTimeout(id, controller);
-        if (isChatgptCodex) {
-          const codex = await runCodexGenerate({
-            prompt: payload.prompt,
-            history: payload.history,
-            model: active.model,
-            attachments: promptContext.attachments,
-            referenceUrl: promptContext.referenceUrl ?? null,
-            designSystem: promptContext.designSystem ?? null,
-            signal: controller.signal,
-            logger: coreLogger,
-          });
-          const result = {
-            message: codex.message,
-            artifacts: codex.artifacts,
-            inputTokens: 0,
-            outputTokens: 0,
-            costUsd: 0,
-            ...(codex.issues.length > 0 ? { warnings: codex.issues } : {}),
-          };
-          logIpc.info('generate.ok', {
-            generationId: id,
-            ms: Date.now() - t0,
-            artifacts: result.artifacts.length,
-            cost: result.costUsd,
-            via: 'codex',
-          });
-          return result;
-        }
+        const isCodex = active.model.provider === CHATGPT_CODEX_PROVIDER_ID;
         const result = await runGenerate(
           {
             prompt: payload.prompt,
             history: payload.history,
             model: active.model,
             apiKey,
+            ...(isCodex
+              ? { getApiKey: () => resolveActiveApiKeyFromState(active.model.provider) }
+              : {}),
             attachments: promptContext.attachments,
             referenceUrl: promptContext.referenceUrl,
             designSystem: promptContext.designSystem ?? null,
@@ -825,20 +833,14 @@ function registerIpcHandlers(db: Database | null): void {
         );
       }
       const active = resolveActiveModel(cfg, payload.model);
-      if (active.model.provider === 'chatgpt-codex') {
-        inFlight.delete(id);
-        throw new CodesignError(
-          'ChatGPT 订阅登录需要 v1 generate 通道。请重启 open-codesign 升级到最新客户端。',
-          'PROVIDER_NOT_SUPPORTED',
-        );
-      }
+      const allowKeyless = active.allowKeyless;
       let apiKey: string;
       try {
-        apiKey = getApiKeyForProvider(active.model.provider);
-      } catch {
-        apiKey = '';
+        apiKey = await resolveApiKeyForActive(active.model.provider, allowKeyless);
+      } catch (err) {
+        inFlight.delete(id);
+        throw err;
       }
-      const allowKeyless = active.allowKeyless;
       // See codesign:v1:generate above — renderer baseUrl is ignored post-snap.
       const baseUrl = active.baseUrl ?? undefined;
       if (active.overridden) {
@@ -870,12 +872,16 @@ function registerIpcHandlers(db: Database | null): void {
       let clearTimeoutGuard: () => void = () => {};
       try {
         clearTimeoutGuard = await armTimeout(id, controller);
+        const isCodex = active.model.provider === CHATGPT_CODEX_PROVIDER_ID;
         const result = await runGenerate(
           {
             prompt: payload.prompt,
             history: payload.history,
             model: active.model,
             apiKey,
+            ...(isCodex
+              ? { getApiKey: () => resolveActiveApiKeyFromState(active.model.provider) }
+              : {}),
             attachments: promptContext.attachments,
             referenceUrl: promptContext.referenceUrl,
             designSystem: promptContext.designSystem ?? null,
@@ -937,13 +943,8 @@ function registerIpcHandlers(db: Database | null): void {
       // active provider so a switch in Settings takes effect immediately.
       const hint = payload.model ?? { provider: cfg.provider, modelId: cfg.modelPrimary };
       const active = resolveActiveModel(cfg, hint);
-      let apiKey: string;
-      try {
-        apiKey = getApiKeyForProvider(active.model.provider);
-      } catch {
-        apiKey = '';
-      }
       const allowKeyless = active.allowKeyless;
+      const apiKey = await resolveApiKeyForActive(active.model.provider, allowKeyless);
       const baseUrl = active.baseUrl ?? undefined;
       const promptContext = await preparePromptContext({
         attachments: payload.attachments,
@@ -1017,13 +1018,8 @@ function registerIpcHandlers(db: Database | null): void {
         provider: cfg.activeProvider,
         modelId: cfg.activeModel,
       });
-      let apiKey: string;
-      try {
-        apiKey = getApiKeyForProvider(active.model.provider);
-      } catch {
-        apiKey = '';
-      }
       const allowKeyless = active.allowKeyless;
+      const apiKey = await resolveApiKeyForActive(active.model.provider, allowKeyless);
       const baseUrl = active.baseUrl ?? undefined;
       const titleLogger: CoreLogger = {
         info: (event, data) => logIpc.info(event, data),
@@ -1031,9 +1027,6 @@ function registerIpcHandlers(db: Database | null): void {
         error: (event, data) => logIpc.error(event, data),
       };
       try {
-        if (active.model.provider === 'chatgpt-codex') {
-          return await generateCodexTitle(prompt, active.model.modelId);
-        }
         return await generateTitle({
           prompt,
           model: active.model,
@@ -1066,20 +1059,10 @@ function registerIpcHandlers(db: Database | null): void {
     if (typeof url !== 'string') {
       throw new CodesignError('codesign:v1:open-external requires a string url', 'IPC_BAD_INPUT');
     }
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
+    if (!isAllowedExternalUrl(url)) {
       throw new CodesignError('URL not allowed', 'IPC_BAD_INPUT');
     }
-    if (
-      parsed.protocol !== 'https:' ||
-      parsed.origin !== 'https://github.com' ||
-      !parsed.pathname.startsWith('/OpenCoworkAI/open-codesign/releases/')
-    ) {
-      throw new CodesignError('URL not allowed', 'IPC_BAD_INPUT');
-    }
-    await shell.openExternal(parsed.toString());
+    await shell.openExternal(url);
   });
 }
 
@@ -1156,12 +1139,39 @@ void app.whenReady().then(async () => {
 
   try {
     initLogger();
+    // Single-instance lock. Two simultaneous Electron instances would race
+    // `cleanupStaleTmps` vs `writeAtomic` (B's cleanup unlinks A's in-flight
+    // tmp → ENOENT rename) and collide on the SQLite WAL. macOS usually
+    // enforces this at the OS level, but `open -n` defeats that — so we
+    // acquire the lock explicitly before touching any shared files.
+    const gotLock = app.requestSingleInstanceLock();
+    if (!gotLock) {
+      app.quit();
+      return;
+    }
+    app.on('second-instance', () => {
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      }
+    });
     // Show a blocking dialog if the user launched from the DMG mount. If
     // they accept the remedy, we quit here before touching safeStorage / the
     // snapshots DB so nothing half-initialises against a bad install.
     const aborted = await maybeAbortIfRunningFromDmg();
     if (aborted) return;
     await loadConfigOnBoot();
+    // One-shot migration for feat-branch testers whose config.toml still
+    // carries Phase 1's stale codex wire/baseUrl. No-op on fresh installs
+    // and for everyone else. A failure here means the config file itself
+    // is unwritable (disk full, permissions, etc.) — let it bubble up to
+    // the outer boot-error dialog rather than silently hiding it, so the
+    // user sees the diagnostic instead of a mysteriously broken codex flow.
+    await migrateStaleCodexEntryIfNeeded();
+    // Best-effort sweep of leftover `<file>.tmp.<pid>` siblings from previous
+    // crashes. pid changes across restarts so without this the config dir
+    // accumulates 0o600 litter forever.
+    cleanupStaleTmps(join(configDir(), 'reported-fingerprints.json'));
     // Snapshot persistence is best-effort at boot — a failure here (corrupt DB,
     // permission denied, missing native binding) must NOT block the BrowserWindow
     // from opening. Surface it via an error dialog and skip registering the

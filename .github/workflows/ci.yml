@@ -46,86 +46,12 @@ jobs:
       - name: Build smoke (electron-vite bundle)
         run: pnpm --filter @open-codesign/desktop exec electron-vite build
 
-  # Linux packaging smoke — actually runs electron-builder for the Linux
-  # targets (AppImage + deb + rpm) so misconfiguration in
-  # apps/desktop/electron-builder.yml (missing maintainer, bad icon size,
-  # wrong artifactName, missing rpmbuild) is caught on every PR instead
-  # of only when a tag release is cut. Runs in parallel with `check` and
-  # only on PRs/pushes that touch packaging-relevant files so unrelated
-  # PRs don't pay the ~4min cost.
-  package-linux-smoke:
-    name: Linux packaging smoke
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Override the workflow-level concurrency: smoke takes ~13 min and the
-    # workflow-level `cancel-in-progress: true` kills it whenever another
-    # PR merges to main in that window, which on this repo happens every
-    # 10-20 min. Per-SHA group means every commit gets an independent
-    # smoke run that always completes (or fails loudly), so the signal we
-    # actually care about — "does the rpm target still work?" — stops
-    # getting silently dropped.
-    concurrency:
-      group: packaging-smoke-${{ github.sha }}
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Detect packaging-relevant changes
-        id: changes
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            packaging:
-              - 'apps/desktop/electron-builder.yml'
-              - 'apps/desktop/package.json'
-              - 'apps/desktop/resources/**'
-              - 'apps/desktop/scripts/**'
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/release.yml'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-
-      - name: Setup pnpm
-        if: steps.changes.outputs.packaging == 'true'
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node
-        if: steps.changes.outputs.packaging == 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-
-      - name: Install
-        if: steps.changes.outputs.packaging == 'true'
-        run: pnpm install --frozen-lockfile
-
-      - name: Install rpmbuild
-        if: steps.changes.outputs.packaging == 'true'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends rpm
-
-      - name: Build workspace
-        if: steps.changes.outputs.packaging == 'true'
-        run: pnpm --filter '!@open-codesign/desktop' -r build
-
-      - name: Package Linux (AppImage + deb + rpm)
-        if: steps.changes.outputs.packaging == 'true'
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: pnpm --filter @open-codesign/desktop release
-
-      - name: Assert artifacts
-        if: steps.changes.outputs.packaging == 'true'
-        run: |
-          cd apps/desktop/release
-          ls -la
-          for ext in AppImage deb rpm; do
-            if ! ls *."$ext" >/dev/null 2>&1; then
-              echo "::error::no .$ext produced by electron-builder"
-              exit 1
-            fi
-          done
-          echo "All three Linux artifacts present."
+  # Linux packaging smoke lives in .github/workflows/packaging-smoke.yml —
+  # it was pulled out of this workflow because workflow-level
+  # `cancel-in-progress: true` kept killing it whenever another PR merged
+  # to main during its ~13 min runtime. The smoke workflow has its own
+  # per-SHA concurrency group so each packaging-touching commit gets an
+  # independent smoke that always runs to completion.
 
   dco:
     name: DCO check

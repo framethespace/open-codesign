@@ -3,11 +3,13 @@ import type {
   ChatAppendInput,
   ChatMessage,
   ChatMessageRow,
+  ClaudeCodeUserType,
   CommentCreateInput,
   CommentRow,
   CommentStatus,
   Design,
   DesignSnapshot,
+  ExternalConfigsDetection,
   GeneratePayloadV1,
   ListEventsInput,
   ListEventsResult,
@@ -40,6 +42,7 @@ export type {
   ModelsListResponse,
   TestEndpointResponse,
 };
+export type { ClaudeCodeUserType, ExternalConfigsDetection };
 export type { CodexOAuthStatus };
 
 export interface ValidateKeyResult {
@@ -65,6 +68,9 @@ export interface ProviderRow {
   baseUrl: string | null;
   isActive: boolean;
   label: string;
+  /** Stored entry name — differs from `label` for codex-imported rows
+   *  where `label` is the localized alias "Codex (imported)". */
+  name: string;
   builtin: boolean;
   wire: WireApi;
   defaultModel: string;
@@ -73,52 +79,11 @@ export interface ProviderRow {
   error?: 'decryption_failed' | string;
 }
 
-export type ClaudeCodeUserType =
-  | 'has-api-key'
-  | 'oauth-only'
-  | 'local-proxy'
-  | 'remote-gateway'
-  | 'parse-error'
-  | 'no-config';
-
-export interface ExternalConfigsDetection {
-  codex?: {
-    providers: ProviderEntry[];
-    activeProvider: string | null;
-    activeModel: string | null;
-    warnings: string[];
-  };
-  claudeCode?: {
-    userType: ClaudeCodeUserType;
-    baseUrl: string;
-    defaultModel: string;
-    hasApiKey: boolean;
-    apiKeySource: 'settings-json' | 'shell-env' | 'none';
-    settingsPath: string;
-    /** Parser-emitted notes for the user (malformed apiKeyHelper, partial
-     * data, etc.). Rendered as muted one-liners under the banner. */
-    warnings: string[];
-  };
-  gemini?: {
-    hasApiKey: boolean;
-    apiKeySource: 'gemini-env' | 'home-env' | 'shell-env' | 'none';
-    /** Absolute path of the `.env` that supplied the key, if any. */
-    keyPath: string | null;
-    baseUrl: string;
-    defaultModel: string;
-    warnings: string[];
-    /** True when we detected Gemini config but can't import (e.g. Vertex AI).
-     *  UI should show a warning-style banner with no import button. */
-    blocked: boolean;
-  };
-  opencode?: {
-    providers: ProviderEntry[];
-    apiKeyMap: Record<string, string>;
-    activeProvider: string | null;
-    activeModel: string | null;
-    warnings: string[];
-  };
-}
+// `ClaudeCodeUserType` and `ExternalConfigsDetection` now live in
+// `packages/shared/src/detection.ts` so main and preload stay in lockstep —
+// see that file for the drift-risk background. The inline definitions that
+// used to live here are gone; re-exports above keep downstream imports
+// from breaking.
 
 export interface AppPaths {
   config: string;
@@ -379,6 +344,9 @@ const api = {
       /** `null` explicitly clears the override and falls back to the model
        *  default; a level string sets it; omit to leave untouched. */
       reasoningLevel?: ReasoningLevel | null;
+      /** Non-empty string rotates the stored secret; empty string clears it
+       *  (keyless providers); omit to leave the existing secret untouched. */
+      apiKey?: string;
     }) => ipcRenderer.invoke('config:v1:update-provider', input) as Promise<OnboardingState>,
     removeProvider: (id: string) =>
       ipcRenderer.invoke('config:v1:remove-provider', id) as Promise<OnboardingState>,
@@ -446,6 +414,12 @@ const api = {
       ipcRenderer.invoke('models:v1:list-for-provider', providerId) as Promise<ModelsListResponse>,
     getMetadata: (input: { providerId: string; modelId: string }) =>
       ipcRenderer.invoke('models:v1:get-metadata', input) as Promise<ModelMetadataResponse>,
+  },
+  ollama: {
+    probe: (baseUrl?: string) =>
+      ipcRenderer.invoke('ollama:v1:probe', baseUrl) as Promise<
+        { ok: true; models: string[] } | { ok: false; code: string; message: string }
+      >,
   },
   snapshots: {
     listDesigns: () =>
@@ -596,6 +570,19 @@ const api = {
       data?: Record<string, unknown>;
       stack?: string;
     }) => ipcRenderer.invoke('diagnostics:v1:log', entry) as Promise<void>,
+    recordRendererError: (input: {
+      schemaVersion: 1;
+      code: string;
+      scope: string;
+      message: string;
+      stack?: string;
+      runId?: string;
+      context?: Record<string, unknown>;
+    }) =>
+      ipcRenderer.invoke('diagnostics:v1:recordRendererError', input) as Promise<{
+        schemaVersion: 1;
+        eventId: number | null;
+      }>,
     openLogFolder: () => ipcRenderer.invoke('diagnostics:v1:openLogFolder') as Promise<void>,
     exportDiagnostics: () =>
       ipcRenderer.invoke('diagnostics:v1:exportDiagnostics') as Promise<string>,

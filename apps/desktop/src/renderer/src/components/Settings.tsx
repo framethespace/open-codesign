@@ -17,6 +17,7 @@ import {
   Loader2,
   MoreHorizontal,
   Palette,
+  Pencil,
   Plus,
   RotateCcw,
   Sliders,
@@ -147,15 +148,16 @@ function NativeSelect({
 // ─── Models tab ──────────────────────────────────────────────────────────────
 
 function ProviderOverflowMenu({
-  isActive,
   hasError,
   onTestConnection,
+  onEdit,
   onDelete,
   label,
 }: {
   isActive: boolean;
   hasError: boolean;
   onTestConnection: () => void;
+  onEdit: () => void;
   onDelete: () => void;
   label: string;
 }) {
@@ -215,6 +217,18 @@ function ProviderOverflowMenu({
               {t('settings.providers.testConnection')}
             </button>
           )}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              close();
+              onEdit();
+            }}
+            className={itemClass}
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            {t('settings.providers.edit')}
+          </button>
           {confirmDelete ? (
             <div className="px-2.5 py-1.5 flex items-center gap-1.5">
               <button
@@ -258,16 +272,19 @@ function ProviderCard({
   config,
   onDelete,
   onActivate,
+  onEdit,
   onRowChanged,
 }: {
   row: ProviderRow;
   config: OnboardingState | null;
   onDelete: (p: string) => void;
   onActivate: (p: string) => void;
+  onEdit: (row: ProviderRow) => void;
   onRowChanged: (row: ProviderRow) => void;
 }) {
   const t = useT();
   const pushToast = useCodesignStore((s) => s.pushToast);
+  const reportableErrorToast = useCodesignStore((s) => s.reportableErrorToast);
   const label = row.label ?? row.provider;
   const hasError = row.error !== undefined;
 
@@ -279,8 +296,9 @@ function ProviderCard({
 
   async function handleTestConnection() {
     if (!window.codesign) {
-      pushToast({
-        variant: 'error',
+      reportableErrorToast({
+        code: 'CONNECTION_TEST_FAILED',
+        scope: 'settings',
         title: t('settings.providers.toast.connectionFailed'),
         description: t('settings.common.unknownError'),
       });
@@ -292,17 +310,22 @@ function ProviderCard({
       if (res.ok) {
         pushToast({ variant: 'success', title: t('settings.providers.toast.connectionOk') });
       } else {
-        pushToast({
-          variant: 'error',
+        reportableErrorToast({
+          code: 'CONNECTION_TEST_FAILED',
+          scope: 'settings',
           title: t('settings.providers.toast.connectionFailed'),
           description: res.hint || res.message,
+          context: { provider: row.provider },
         });
       }
     } catch (err) {
-      pushToast({
-        variant: 'error',
+      reportableErrorToast({
+        code: 'CONNECTION_TEST_FAILED',
+        scope: 'settings',
         title: t('settings.providers.toast.connectionFailed'),
         description: err instanceof Error ? err.message : t('settings.common.unknownError'),
+        ...(err instanceof Error && err.stack !== undefined ? { stack: err.stack } : {}),
+        context: { provider: row.provider },
       });
     }
   }
@@ -354,6 +377,7 @@ function ProviderCard({
             isActive={row.isActive}
             hasError={hasError}
             onTestConnection={handleTestConnection}
+            onEdit={() => onEdit(row)}
             onDelete={() => onDelete(row.provider)}
             label={label}
           />
@@ -383,7 +407,7 @@ function ActiveModelSelector({
 }) {
   const t = useT();
   const setConfig = useCodesignStore((s) => s.completeOnboarding);
-  const pushToast = useCodesignStore((s) => s.pushToast);
+  const reportableErrorToast = useCodesignStore((s) => s.reportableErrorToast);
 
   const [primary, setPrimary] = useState(config.modelPrimary ?? '');
   const [models, setModels] = useState<string[] | null>(null);
@@ -421,10 +445,13 @@ function ActiveModelSelector({
       setConfig(updated);
       return true;
     } catch (err) {
-      pushToast({
-        variant: 'error',
+      reportableErrorToast({
+        code: 'PROVIDER_MODEL_SAVE_FAILED',
+        scope: 'settings',
         title: t('settings.providers.toast.modelSaveFailed'),
         description: err instanceof Error ? err.message : t('settings.common.unknownError'),
+        ...(err instanceof Error && err.stack !== undefined ? { stack: err.stack } : {}),
+        context: { provider },
       });
       return false;
     }
@@ -473,6 +500,7 @@ function ReasoningDepthSelector({
 }) {
   const t = useT();
   const pushToast = useCodesignStore((s) => s.pushToast);
+  const reportableErrorToast = useCodesignStore((s) => s.reportableErrorToast);
   const [saving, setSaving] = useState(false);
   // Controlled local state — optimistic so the dropdown reflects the user's
   // choice immediately, before the IPC round-trip resolves. Without this,
@@ -505,10 +533,13 @@ function ReasoningDepthSelector({
       // Roll back the optimistic update only if this is still the latest
       // in-flight save — otherwise a newer pick is about to land.
       if (seq === saveSeq.current) setCurrent(prev);
-      pushToast({
-        variant: 'error',
+      reportableErrorToast({
+        code: 'PROVIDER_REASONING_SAVE_FAILED',
+        scope: 'settings',
         title: t('settings.providers.toast.reasoningSaveFailed'),
         description: err instanceof Error ? err.message : t('settings.common.unknownError'),
+        ...(err instanceof Error && err.stack !== undefined ? { stack: err.stack } : {}),
+        context: { provider },
       });
     } finally {
       if (seq === saveSeq.current) setSaving(false);
@@ -561,9 +592,10 @@ function maskBaseUrlCreds(raw: string): string {
     if (u.username === '' && u.password === '') return raw;
     u.username = '';
     u.password = '';
-    // URL.toString() adds a trailing slash on bare-host URLs; strip it so
-    // "https://proxy.local/" doesn't become "https://proxy.local/" while
-    // the raw was "https://proxy.local".
+    // URL.toString() always appends a trailing slash on bare-host URLs.
+    // Preserve the input's original slash/no-slash shape so
+    // `https://proxy.local` round-trips unchanged — only the credentials
+    // get stripped.
     return u.toString().replace(/\/$/, raw.endsWith('/') ? '/' : '');
   } catch {
     return raw;
@@ -786,6 +818,7 @@ function ModelsTab() {
   const config = useCodesignStore((s) => s.config);
   const setConfig = useCodesignStore((s) => s.completeOnboarding);
   const pushToast = useCodesignStore((s) => s.pushToast);
+  const reportableErrorToast = useCodesignStore((s) => s.reportableErrorToast);
   const [rows, setRows] = useState<ProviderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddCustom, setShowAddCustom] = useState(false);
@@ -812,7 +845,9 @@ function ModelsTab() {
           blocked: boolean;
         }
       | undefined;
-    opencode?: { count: number } | undefined;
+    opencode?:
+      | { count: number; providerLabels: string[]; warnings: string[]; blocked: boolean }
+      | undefined;
   } | null>(null);
   /**
    * When set, `AddCustomProviderModal` mounts with these fields pre-filled.
@@ -830,6 +865,14 @@ function ModelsTab() {
       }
     | undefined
   >(undefined);
+  /** Open AddCustomProviderModal in edit-mode against this row. Works for
+   *  both builtin and custom providers; builtins get their endpoint fields
+   *  locked so users can't accidentally break them. */
+  const [editingRow, setEditingRow] = useState<ProviderRow | null>(null);
+
+  function handleEdit(row: ProviderRow) {
+    setEditingRow(row);
+  }
 
   useEffect(() => {
     if (!window.codesign) return;
@@ -889,7 +932,17 @@ function ModelsTab() {
               }
             : {}),
           ...(detected.opencode !== undefined && !dismissedOpencode
-            ? { opencode: { count: detected.opencode.providers.length } }
+            ? {
+                opencode: {
+                  count: detected.opencode.providers.length,
+                  // Preserve the "OpenCode · Anthropic" style labels so the
+                  // banner can show the user WHICH providers will be
+                  // imported, not just a bare count.
+                  providerLabels: detected.opencode.providers.map((p) => p.name),
+                  warnings: detected.opencode.warnings ?? [],
+                  blocked: detected.opencode.blocked,
+                },
+              }
             : {}),
         });
       })
@@ -916,42 +969,72 @@ function ModelsTab() {
       await reloadRows();
       pushToast({ variant: 'success', title: t('settings.providers.import.codexDone') });
     } catch (err) {
-      pushToast({
-        variant: 'error',
+      reportableErrorToast({
+        code: 'CODEX_IMPORT_FAILED',
+        scope: 'onboarding',
         title: t('settings.providers.import.failed'),
         description: err instanceof Error ? err.message : t('settings.common.unknownError'),
+        ...(err instanceof Error && err.stack !== undefined ? { stack: err.stack } : {}),
       });
     }
   }
 
   async function handleImportGemini() {
     if (!window.codesign) return;
+    // Capture pre-import warnings (e.g. "AIzaSy pattern mismatch") so a
+    // soft-validation failure surfaces in the toast description instead
+    // of silently shipping an invalid key the user will only discover on
+    // first request.
+    const geminiWarnings = externalConfigs?.gemini?.warnings ?? [];
     try {
       await window.codesign.config.importGeminiConfig();
       setExternalConfigs((prev) => (prev === null ? null : { ...prev, gemini: undefined }));
       await reloadRows();
-      pushToast({ variant: 'success', title: t('settings.providers.import.geminiDone') });
-    } catch (err) {
+      const description =
+        geminiWarnings.length > 0 ? geminiWarnings.slice(0, 2).join('\n') : undefined;
       pushToast({
-        variant: 'error',
+        variant: 'success',
+        title: t('settings.providers.import.geminiDone'),
+        ...(description !== undefined ? { description } : {}),
+      });
+    } catch (err) {
+      reportableErrorToast({
+        code: 'GEMINI_IMPORT_FAILED',
+        scope: 'onboarding',
         title: t('settings.providers.import.failed'),
         description: err instanceof Error ? err.message : t('settings.common.unknownError'),
+        ...(err instanceof Error && err.stack !== undefined ? { stack: err.stack } : {}),
       });
     }
   }
 
   async function handleImportOpencode() {
     if (!window.codesign) return;
+    // Capture pre-import warnings: OpenCode commonly has OAuth entries that
+    // we skip, and without surfacing those reasons the user sees "imported
+    // 3 providers" success toast but the other 2 entries vanish silently.
+    const skippedSummary = externalConfigs?.opencode?.warnings ?? [];
     try {
       await window.codesign.config.importOpencodeConfig();
       setExternalConfigs((prev) => (prev === null ? null : { ...prev, opencode: undefined }));
       await reloadRows();
-      pushToast({ variant: 'success', title: t('settings.providers.import.opencodeDone') });
-    } catch (err) {
+      const description =
+        skippedSummary.length > 0
+          ? skippedSummary.slice(0, 3).join('\n') +
+            (skippedSummary.length > 3 ? `\n+${skippedSummary.length - 3} more` : '')
+          : undefined;
       pushToast({
-        variant: 'error',
+        variant: 'success',
+        title: t('settings.providers.import.opencodeDone'),
+        ...(description !== undefined ? { description } : {}),
+      });
+    } catch (err) {
+      reportableErrorToast({
+        code: 'OPENCODE_IMPORT_FAILED',
+        scope: 'onboarding',
         title: t('settings.providers.import.failed'),
         description: err instanceof Error ? err.message : t('settings.common.unknownError'),
+        ...(err instanceof Error && err.stack !== undefined ? { stack: err.stack } : {}),
       });
     }
   }
@@ -989,10 +1072,12 @@ function ModelsTab() {
         });
         return;
       }
-      pushToast({
-        variant: 'error',
+      reportableErrorToast({
+        code: 'CLAUDECODE_IMPORT_FAILED',
+        scope: 'onboarding',
         title: t('settings.providers.import.failed'),
         description: err instanceof Error ? err.message : t('settings.common.unknownError'),
+        ...(err instanceof Error && err.stack !== undefined ? { stack: err.stack } : {}),
       });
     }
   }
@@ -1057,10 +1142,12 @@ function ModelsTab() {
         }
       }
     } catch (err) {
-      pushToast({
-        variant: 'error',
+      reportableErrorToast({
+        code: 'PROVIDER_DELETE_FAILED',
+        scope: 'settings',
         title: t('settings.providers.toast.deleteFailed'),
         description: err instanceof Error ? err.message : t('settings.common.unknownError'),
+        ...(err instanceof Error && err.stack !== undefined ? { stack: err.stack } : {}),
       });
     }
   }
@@ -1097,10 +1184,12 @@ function ModelsTab() {
         title: t('settings.providers.toast.switchedTo', { label }),
       });
     } catch (err) {
-      pushToast({
-        variant: 'error',
+      reportableErrorToast({
+        code: 'PROVIDER_ACTIVATE_FAILED',
+        scope: 'settings',
         title: t('settings.providers.toast.switchFailed'),
         description: err instanceof Error ? err.message : t('settings.common.unknownError'),
+        ...(err instanceof Error && err.stack !== undefined ? { stack: err.stack } : {}),
       });
     }
   }
@@ -1132,6 +1221,28 @@ function ModelsTab() {
         />
       )}
 
+      {editingRow !== null && (
+        <AddCustomProviderModal
+          onSave={async () => {
+            setEditingRow(null);
+            await reloadRows();
+            pushToast({ variant: 'success', title: t('settings.providers.toast.saved') });
+          }}
+          onClose={() => setEditingRow(null)}
+          editTarget={{
+            id: editingRow.provider,
+            name: editingRow.name,
+            baseUrl: editingRow.baseUrl ?? '',
+            wire: editingRow.wire,
+            defaultModel: editingRow.defaultModel,
+            builtin: editingRow.builtin,
+            lockEndpoint: editingRow.builtin,
+            ...(editingRow.maskedKey.length > 0 ? { keyMask: editingRow.maskedKey } : {}),
+          }}
+          initialSetAsActive={false}
+        />
+      )}
+
       <div className="space-y-[var(--space-3)]">
         <ChatgptLoginCard onStatusChange={reloadRows} />
         {externalConfigs !== null &&
@@ -1154,20 +1265,44 @@ function ModelsTab() {
                   }}
                 />
               )}
-              {externalConfigs.opencode !== undefined && (
-                <ImportBanner
-                  label={t('settings.providers.import.opencodeFound', {
-                    count: externalConfigs.opencode.count,
-                  })}
-                  onImport={handleImportOpencode}
-                  onDismiss={() => {
+              {externalConfigs.opencode !== undefined &&
+                (() => {
+                  const oc = externalConfigs.opencode;
+                  const dismiss = () => {
                     writeDismissed('opencode');
                     setExternalConfigs((prev) =>
                       prev === null ? null : { ...prev, opencode: undefined },
                     );
-                  }}
-                />
-              )}
+                  };
+                  if (oc.blocked) {
+                    // Corrupt auth.json / all OAuth / all unsupported —
+                    // surface what we saw so the user doesn't think nothing
+                    // was detected. No import button because there's
+                    // nothing importable.
+                    return (
+                      <ImportBanner
+                        label={oc.warnings[0] ?? t('settings.providers.import.opencodeBlocked')}
+                        onDismiss={dismiss}
+                      />
+                    );
+                  }
+                  // First 3 provider labels inline, then "+N more" for
+                  // the overflow. Keeps the banner one-line even for a
+                  // user with 7 keys configured in opencode.
+                  const head = oc.providerLabels.slice(0, 3).join(', ');
+                  const overflow = oc.providerLabels.length - 3;
+                  const providerSummary = overflow > 0 ? `${head} +${overflow} more` : head;
+                  return (
+                    <ImportBanner
+                      label={t('settings.providers.import.opencodeFound', {
+                        count: oc.count,
+                        providers: providerSummary,
+                      })}
+                      onImport={handleImportOpencode}
+                      onDismiss={dismiss}
+                    />
+                  );
+                })()}
               {externalConfigs.gemini !== undefined &&
                 (() => {
                   const g = externalConfigs.gemini;
@@ -1375,6 +1510,7 @@ function ModelsTab() {
                 config={config}
                 onDelete={handleDelete}
                 onActivate={handleActivate}
+                onEdit={handleEdit}
                 onRowChanged={(next) =>
                   setRows((prev) => prev.map((r) => (r.provider === next.provider ? next : r)))
                 }

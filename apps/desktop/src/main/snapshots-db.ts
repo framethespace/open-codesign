@@ -1103,7 +1103,7 @@ export function recordDiagnosticEvent(
   db: Database,
   input: DiagnosticEventInput,
   now: () => number = Date.now,
-): void {
+): number {
   const ts = now();
   const recent = db
     .prepare(
@@ -1118,25 +1118,28 @@ export function recordDiagnosticEvent(
     db.prepare(
       'UPDATE diagnostic_events SET count = count + 1, ts = ?, transient = ? WHERE id = ?',
     ).run(ts, mergedTransient, recent.id);
-    return;
+    return recent.id;
   }
 
-  db.prepare(
-    `INSERT INTO diagnostic_events
+  const result = db
+    .prepare(
+      `INSERT INTO diagnostic_events
        (schema_version, ts, level, code, scope, run_id, fingerprint, message, stack, transient, count, context_json)
      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-  ).run(
-    ts,
-    input.level,
-    input.code,
-    input.scope,
-    input.runId ?? null,
-    input.fingerprint,
-    input.message,
-    input.stack ?? null,
-    input.transient ? 1 : 0,
-    input.context !== undefined ? JSON.stringify(input.context) : null,
-  );
+    )
+    .run(
+      ts,
+      input.level,
+      input.code,
+      input.scope,
+      input.runId ?? null,
+      input.fingerprint,
+      input.message,
+      input.stack ?? null,
+      input.transient ? 1 : 0,
+      input.context !== undefined ? JSON.stringify(input.context) : null,
+    );
+  return Number(result.lastInsertRowid);
 }
 
 export function getDiagnosticEventById(db: Database, id: number): DiagnosticEventRow | undefined {

@@ -2,10 +2,15 @@ import { readFile } from 'node:fs/promises';
 import { type ValidateResult, pingProvider } from '@open-codesign/providers';
 import {
   BUILTIN_PROVIDERS,
+  type ClaudeCodeDetectionMeta,
   CodesignError,
+  type CodexDetectionMeta,
   type Config,
   ERROR_CODES,
+  type ExternalConfigsDetection,
+  type GeminiDetectionMeta,
   type OnboardingState,
+  type OpencodeDetectionMeta,
   type ProviderEntry,
   type ReasoningLevel,
   ReasoningLevelSchema,
@@ -22,10 +27,15 @@ import { buildAuthHeadersForWire } from './auth-headers';
 import { defaultConfigDir, readConfig, writeConfig } from './config';
 import { dialog, ipcMain, shell } from './electron-runtime';
 import { type ClaudeCodeImport, readClaudeCodeSettings } from './imports/claude-code-config';
-import { type CodexImport, codexAuthPath, readCodexConfig } from './imports/codex-config';
+import {
+  ALLOWED_IMPORT_ENV_KEYS,
+  type CodexImport,
+  codexAuthPath,
+  readCodexConfig,
+} from './imports/codex-config';
 import { type GeminiImport, readGeminiCliConfig } from './imports/gemini-cli-config';
 import { type OpencodeImport, readOpencodeConfig } from './imports/opencode-config';
-import { buildSecretRef, decryptSecret, migrateSecrets, tryBuildSecretRef } from './keychain';
+import { buildSecretRef, decryptSecret, migrateSecrets } from './keychain';
 import { defaultLogsDir, getLogger } from './logger';
 import {
   type ProviderRow,
@@ -136,8 +146,20 @@ export function getApiKeyForProvider(provider: string): string {
   //      throwing a misleading "key missing" error.
   const entry = cfg.providers[provider];
   if (entry?.envKey !== undefined) {
-    const fromEnv = process.env[entry.envKey]?.trim();
-    if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv;
+    // Defense in depth against legacy configs: Codex's config.toml env_key
+    // field is now allowlisted at import time, but older configs may have
+    // stored arbitrary env-var names (pre-allowlist). Re-check here so a
+    // stale `envKey: "AWS_SECRET_ACCESS_KEY"` can't still exfiltrate on
+    // every LLM call.
+    if (!ALLOWED_IMPORT_ENV_KEYS.has(entry.envKey)) {
+      logger.warn('get_api_key.envKey_blocked', {
+        provider,
+        envKey: entry.envKey,
+      });
+    } else {
+      const fromEnv = process.env[entry.envKey]?.trim();
+      if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv;
+    }
   }
 
   throw new CodesignError(
@@ -644,6 +666,10 @@ interface UpdateProviderInput {
   queryParams?: Record<string, string>;
   wire?: WireApi;
   reasoningLevel?: ReasoningLevel | null;
+  /** When present AND non-empty, re-encrypt and replace the stored secret.
+   *  Empty string means "clear stored secret" for providers that became
+   *  keyless (e.g. switched to local Ollama). `undefined` means "leave alone". */
+  apiKey?: string;
 }
 
 function parseUpdateProviderPayload(raw: unknown): UpdateProviderInput {
@@ -695,6 +721,7 @@ function parseUpdateProviderPayload(raw: unknown): UpdateProviderInput {
     const parsed = ReasoningLevelSchema.safeParse(r['reasoningLevel']);
     if (parsed.success) out.reasoningLevel = parsed.data;
   }
+  if (typeof r['apiKey'] === 'string') out.apiKey = r['apiKey'];
   return out;
 }
 
@@ -703,7 +730,12 @@ async function runUpdateProvider(input: UpdateProviderInput): Promise<Onboarding
   if (cfg === null) {
     throw new CodesignError('No configuration found', ERROR_CODES.CONFIG_MISSING);
   }
-  const existing = cfg.providers[input.id];
+  // Builtin providers may not have an entry on disk yet on a fresh install
+  // (the providers map is seeded lazily). Fall back to BUILTIN_PROVIDERS so
+  // "change my Ollama baseUrl" works before the user ever opened onboarding.
+  const existing =
+    cfg.providers[input.id] ??
+    (isSupportedOnboardingProvider(input.id) ? { ...BUILTIN_PROVIDERS[input.id] } : undefined);
   if (existing === undefined) {
     throw new CodesignError(`Provider "${input.id}" not found`, ERROR_CODES.IPC_BAD_INPUT);
   }
@@ -725,11 +757,24 @@ async function runUpdateProvider(input: UpdateProviderInput): Promise<Onboarding
   } else if (input.reasoningLevel !== undefined) {
     updated.reasoningLevel = input.reasoningLevel;
   }
+  // Secret rotation: only touch secrets when the caller explicitly supplied
+  // an apiKey field. Empty string clears the secret (keyless providers);
+  // a non-empty value re-encrypts under the current safeStorage session key.
+  let nextSecrets = cfg.secrets;
+  if (input.apiKey !== undefined) {
+    const trimmed = input.apiKey.trim();
+    if (trimmed.length === 0) {
+      const { [input.id]: _removed, ...rest } = cfg.secrets;
+      nextSecrets = rest;
+    } else {
+      nextSecrets = { ...cfg.secrets, [input.id]: buildSecretRef(trimmed) };
+    }
+  }
   const next = hydrateConfig({
     version: 3,
     activeProvider: cfg.activeProvider,
     activeModel: cfg.activeModel,
-    secrets: cfg.secrets,
+    secrets: nextSecrets,
     providers: { ...cfg.providers, [input.id]: updated },
     ...(cfg.designSystem !== undefined ? { designSystem: cfg.designSystem } : {}),
   });
@@ -738,44 +783,34 @@ async function runUpdateProvider(input: UpdateProviderInput): Promise<Onboarding
   return toState(cachedConfig);
 }
 
-interface ClaudeCodeDetectionMeta {
-  userType: ClaudeCodeImport['userType'];
-  baseUrl: string;
-  defaultModel: string;
-  hasApiKey: boolean;
-  apiKeySource: ClaudeCodeImport['apiKeySource'];
-  settingsPath: string;
-  warnings: string[];
-}
+// `ExternalConfigsDetection` and its four `*DetectionMeta` satellites now
+// live in `packages/shared/src/detection.ts` so the main process and the
+// preload facade can import one source — see that file's header for the
+// "we were drifting silently" background.
 
-interface ExternalConfigsDetection {
-  codex?: CodexImport;
-  claudeCode?: ClaudeCodeDetectionMeta;
-  gemini?: GeminiDetectionMeta;
-  opencode?: OpencodeImport;
-}
-
-interface GeminiDetectionMeta {
-  hasApiKey: boolean;
-  apiKeySource: GeminiImport['apiKeySource'];
-  /** Absolute path of the `.env` that supplied the key, if any. */
-  keyPath: string | null;
-  baseUrl: string;
-  defaultModel: string;
-  warnings: string[];
-  /** Vertex AI users land here: provider=null, hasApiKey=false, warning set.
-   *  Banner should render a "Vertex detected — manual config required" note
-   *  rather than an import button. */
-  blocked: boolean;
-}
-
-async function detectChatgptSubscription(): Promise<boolean> {
+/** Test seam: the real IPC handler calls `detectChatgptSubscription()` with
+ *  no args, which resolves the path via `codexAuthPath()`. Tests can pass
+ *  a fabricated path pointing at a tmpdir file without having to mock
+ *  `node:fs/promises`. */
+export async function detectChatgptSubscription(
+  authPath: string = codexAuthPath(),
+): Promise<boolean> {
   try {
-    const raw = await readFile(codexAuthPath(), 'utf8');
+    const raw = await readFile(authPath, 'utf8');
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return false;
     return (parsed as Record<string, unknown>)['auth_mode'] === 'chatgpt';
-  } catch {
+  } catch (err) {
+    // ENOENT is the "no Codex installed" case; every other error (EACCES,
+    // corrupt JSON, etc.) drives the wrong error-message branch for the
+    // caller, so log it instead of swallowing silently.
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') {
+      logger.warn('detect_chatgpt_subscription.failed', {
+        code: code ?? 'unknown',
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
     return false;
   }
 }
@@ -803,8 +838,11 @@ async function runImportCodex(imported: CodexImport): Promise<OnboardingState> {
     if (entry.envKey !== undefined) {
       const envValue = process.env[entry.envKey]?.trim();
       if (envValue !== undefined && envValue.length > 0) {
-        const ref = tryBuildSecretRef(envValue);
-        if (ref !== null) nextSecrets[entry.id] = ref;
+        // buildSecretRef throws only on empty input — length is already
+        // guarded. Bare call instead of wrapping in try/catch so any future
+        // invariant break fails loudly rather than quietly writing a row
+        // with no key and reporting success.
+        nextSecrets[entry.id] = buildSecretRef(envValue);
         continue;
       }
     }
@@ -815,8 +853,7 @@ async function runImportCodex(imported: CodexImport): Promise<OnboardingState> {
           ? process.env['OPENAI_API_KEY']?.trim()
           : undefined;
     if (fallbackApiKey !== undefined && fallbackApiKey.length > 0) {
-      const ref = tryBuildSecretRef(fallbackApiKey);
-      if (ref !== null) nextSecrets[entry.id] = ref;
+      nextSecrets[entry.id] = buildSecretRef(fallbackApiKey);
     }
   }
   const fallbackActive = imported.providers[0];
@@ -870,8 +907,7 @@ async function runImportClaudeCode(imported: ClaudeCodeImport): Promise<Onboardi
   const importedApiKey = imported.apiKey?.trim();
   const keySaved = importedApiKey !== undefined && importedApiKey.length > 0;
   if (keySaved) {
-    const ref = tryBuildSecretRef(importedApiKey);
-    if (ref !== null) nextSecrets[imported.provider.id] = ref;
+    nextSecrets[imported.provider.id] = buildSecretRef(importedApiKey);
   }
 
   // Flip active only when we have a key the new provider can actually use,
@@ -903,10 +939,9 @@ async function runImportClaudeCode(imported: ClaudeCodeImport): Promise<Onboardi
 }
 
 async function runImportGemini(imported: GeminiImport): Promise<OnboardingState> {
-  // Vertex AI and malformed shells land here with provider=null. The renderer
-  // catches CONFIG_MISSING and surfaces the warning in a toast — we do not
-  // want to create an empty provider entry that would then fail validation.
-  if (imported.provider === null) {
+  // Blocked state: Vertex detection etc. — no provider to write. The
+  // renderer catches CONFIG_MISSING and surfaces the warning in a toast.
+  if (imported.kind === 'blocked') {
     throw new CodesignError(
       imported.warnings[0] ?? 'Gemini CLI config produced no provider',
       ERROR_CODES.CONFIG_MISSING,
@@ -921,11 +956,10 @@ async function runImportGemini(imported: GeminiImport): Promise<OnboardingState>
     }
   }
   nextProviders[imported.provider.id] = imported.provider;
-  const importedApiKey = imported.apiKey?.trim();
-  const keySaved = importedApiKey !== undefined && importedApiKey.length > 0;
+  const importedApiKey = imported.apiKey.trim();
+  const keySaved = importedApiKey.length > 0;
   if (keySaved) {
-    const ref = tryBuildSecretRef(importedApiKey);
-    if (ref !== null) nextSecrets[imported.provider.id] = ref;
+    nextSecrets[imported.provider.id] = buildSecretRef(importedApiKey);
   }
 
   const shouldActivate = keySaved || cachedConfig === null;
@@ -970,8 +1004,7 @@ async function runImportOpencode(imported: OpencodeImport): Promise<OnboardingSt
     nextProviders[entry.id] = entry;
     const importedApiKey = imported.apiKeyMap[entry.id]?.trim();
     if (importedApiKey !== undefined && importedApiKey.length > 0) {
-      const ref = tryBuildSecretRef(importedApiKey);
-      if (ref !== null) nextSecrets[entry.id] = ref;
+      nextSecrets[entry.id] = buildSecretRef(importedApiKey);
     }
   }
   const fallbackActive = imported.providers[0];
@@ -1021,7 +1054,15 @@ async function runListEndpointModels(raw: unknown): Promise<ListEndpointModelsRe
   if (typeof apiKey !== 'string' || apiKey.trim().length === 0) {
     return { ok: false, error: 'apiKey required' };
   }
-  const url = modelsEndpointUrl(baseUrl, parsedWire.data);
+  let url: string;
+  try {
+    url = modelsEndpointUrl(baseUrl, parsedWire.data);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'unsupported wire for /models lookup',
+    };
+  }
   const headers = buildAuthHeadersForWire(parsedWire.data, apiKey, undefined, baseUrl);
   try {
     const res = await fetch(url, {
@@ -1110,11 +1151,26 @@ export function registerOnboardingIpc(): void {
   ipcMain.handle(
     'config:v1:detect-external-configs',
     async (): Promise<ExternalConfigsDetection> => {
+      // Log non-ENOENT failures so an unreadable config (EACCES, EISDIR,
+      // corrupted file) leaves a diagnostic trail instead of silently
+      // degrading into "no config found". The file-not-present case
+      // (ENOENT) is the common one and stays noiseless.
+      const logDetectFailure = (source: string) => (err: unknown) => {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== 'ENOENT') {
+          logger.warn('detect_external_configs.read_failed', {
+            source,
+            code: code ?? 'unknown',
+            err: err instanceof Error ? err.message : String(err),
+          });
+        }
+        return null;
+      };
       const [codex, claudeCode, gemini, opencode] = await Promise.all([
-        readCodexConfig().catch(() => null),
-        readClaudeCodeSettings().catch(() => null),
-        readGeminiCliConfig().catch(() => null),
-        readOpencodeConfig().catch(() => null),
+        readCodexConfig().catch(logDetectFailure('codex')),
+        readClaudeCodeSettings().catch(logDetectFailure('claude-code')),
+        readGeminiCliConfig().catch(logDetectFailure('gemini')),
+        readOpencodeConfig().catch(logDetectFailure('opencode')),
       ]);
       const providerIds = Object.keys(cachedConfig?.providers ?? {});
       const alreadyHasCodex = providerIds.some((id) => id.startsWith('codex-'));
@@ -1122,7 +1178,17 @@ export function registerOnboardingIpc(): void {
       const alreadyHasGemini = providerIds.includes('gemini-import');
       const alreadyHasOpencode = providerIds.some((id) => id.startsWith('opencode-'));
       const out: ExternalConfigsDetection = {};
-      if (codex !== null && codex.providers.length > 0 && !alreadyHasCodex) out.codex = codex;
+      if (codex !== null && codex.providers.length > 0 && !alreadyHasCodex) {
+        // Project to CodexDetectionMeta — strip `apiKeyMap` and `envKeyMap`
+        // so plaintext keys never cross the IPC boundary. The import IPC
+        // (`config:v1:import-codex-config`) re-reads the file at use time.
+        out.codex = {
+          providers: codex.providers,
+          activeProvider: codex.activeProvider,
+          activeModel: codex.activeModel,
+          warnings: codex.warnings,
+        };
+      }
       // Surface Claude Code unless we already imported it. We still surface
       // `oauth-only` users (provider === null) because they need the
       // "subscription can't be shared" banner too — `alreadyHasClaudeCode`
@@ -1140,27 +1206,44 @@ export function registerOnboardingIpc(): void {
         };
       }
       // Gemini: surface whenever we found either a usable key OR a Vertex AI
-      // signal (provider=null with warning). `alreadyHasGemini` gates the
-      // regular import path; Vertex users see the banner regardless since
-      // their config was already imported by a previous Gemini session — the
-      // banner tells them what they need to do manually.
+      // signal (kind='blocked'). `alreadyHasGemini` gates the regular import
+      // path; Vertex users see the banner regardless since their config was
+      // already imported by a previous Gemini session — the banner tells
+      // them what they need to do manually.
       if (gemini !== null) {
-        const blocked = gemini.provider === null;
+        const blocked = gemini.kind === 'blocked';
         if (!alreadyHasGemini || blocked) {
           out.gemini = {
-            hasApiKey: gemini.apiKey !== null,
-            apiKeySource: gemini.apiKeySource,
-            keyPath: gemini.keyPath,
+            hasApiKey: gemini.kind === 'found',
+            apiKeySource: gemini.kind === 'found' ? gemini.apiKeySource : 'none',
+            keyPath: gemini.kind === 'found' ? gemini.keyPath : null,
             baseUrl:
-              gemini.provider?.baseUrl ?? 'https://generativelanguage.googleapis.com/v1beta/openai',
-            defaultModel: gemini.provider?.defaultModel ?? 'gemini-2.5-flash',
+              gemini.kind === 'found'
+                ? gemini.provider.baseUrl
+                : 'https://generativelanguage.googleapis.com/v1beta/openai',
+            defaultModel:
+              gemini.kind === 'found' ? gemini.provider.defaultModel : 'gemini-2.5-flash',
             warnings: gemini.warnings,
             blocked,
           };
         }
       }
-      if (opencode !== null && opencode.providers.length > 0 && !alreadyHasOpencode) {
-        out.opencode = opencode;
+      if (opencode !== null && !alreadyHasOpencode) {
+        // Surface whenever we found opencode evidence — either (a) there's
+        // at least one importable provider (happy path), or (b) auth.json
+        // exists but produced no usable entries (corrupt JSON, all OAuth,
+        // all unsupported). Case (b) gets a warning-only banner so the
+        // user at least sees we detected their setup.
+        const blocked = opencode.providers.length === 0;
+        if (!blocked || opencode.warnings.length > 0) {
+          out.opencode = {
+            providers: opencode.providers,
+            activeProvider: opencode.activeProvider,
+            activeModel: opencode.activeModel,
+            warnings: opencode.warnings,
+            blocked,
+          };
+        }
       }
       return out;
     },

@@ -1,8 +1,22 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { findRecent, readReported, recordReported, writeAtomic } from './reported-fingerprints';
+import {
+  cleanupStaleTmps,
+  findRecent,
+  readReported,
+  recordReported,
+  writeAtomic,
+} from './reported-fingerprints';
 
 function freshDir(): string {
   return mkdtempSync(join(tmpdir(), 'reported-fp-'));
@@ -146,5 +160,47 @@ describe('writeAtomic', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('writeAtomic cleans up tmp file when renameSync throws', () => {
+    // Force renameSync to fail naturally: the target path is an existing
+    // non-empty directory, so `rename(tmp, path)` can't replace it. This
+    // mirrors the real-world EROFS / EACCES case where the tmp was written
+    // but the final move failed, and asserts we don't leak `.tmp.<pid>`
+    // siblings into `~/.config/open-codesign/`.
+    const dir = freshDir();
+    const file = join(dir, 'fp-as-dir');
+    try {
+      mkdirSync(file);
+      writeFileSync(join(file, 'blocker'), 'x');
+      expect(() => writeAtomic(file, 'new')).toThrow();
+      const leftover = readdirSync(dir).filter((n) => n.includes('.tmp.'));
+      expect(leftover).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('cleanupStaleTmps', () => {
+  it('removes .tmp.* siblings of the given filePath', () => {
+    const dir = freshDir();
+    const file = join(dir, 'reported-fingerprints.json');
+    try {
+      writeFileSync(join(dir, 'reported-fingerprints.json.tmp.111'), 'stale');
+      writeFileSync(join(dir, 'reported-fingerprints.json.tmp.222'), 'stale');
+      writeFileSync(join(dir, 'unrelated.json'), 'keep');
+      writeFileSync(join(dir, 'reported-fingerprints.json'), 'keep');
+      cleanupStaleTmps(file);
+      const remaining = readdirSync(dir).sort();
+      expect(remaining).toEqual(['reported-fingerprints.json', 'unrelated.json']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('is a silent no-op when the config dir does not exist', () => {
+    const missing = join(tmpdir(), `never-created-${Date.now()}-${Math.random()}`);
+    expect(() => cleanupStaleTmps(join(missing, 'reported-fingerprints.json'))).not.toThrow();
   });
 });

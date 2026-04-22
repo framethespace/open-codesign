@@ -20,7 +20,11 @@ export function createProviderContextStore(maxEntries = 50): ProviderContextStor
   const map = new Map<string, Record<string, unknown>>();
   return {
     remember(runId, ctx) {
-      if (map.size >= maxEntries) {
+      // Guard the eviction on !has(runId): overwriting an existing key doesn't
+      // grow the map, so evicting the oldest would silently drop an unrelated
+      // run's stash (e.g. a second `provider.error` for the same runId during
+      // a retry loop would cost us another run's upstream_request_id).
+      if (!map.has(runId) && map.size >= maxEntries) {
         const oldest = map.keys().next().value;
         if (oldest !== undefined) map.delete(oldest);
       }

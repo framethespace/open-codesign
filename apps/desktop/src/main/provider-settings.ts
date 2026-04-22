@@ -1,5 +1,6 @@
 import {
   BUILTIN_PROVIDERS,
+  CHATGPT_CODEX_PROVIDER_ID,
   CodesignError,
   type Config,
   ERROR_CODES,
@@ -7,6 +8,7 @@ import {
   PROVIDER_SHORTLIST,
   type ProviderEntry,
   type ReasoningLevel,
+  SUPPORTED_ONBOARDING_PROVIDERS,
   type WireApi,
   isSupportedOnboardingProvider,
 } from '@open-codesign/shared';
@@ -17,7 +19,12 @@ export interface ProviderRow {
   maskedKey: string;
   baseUrl: string | null;
   isActive: boolean;
+  /** Human-readable display label. For codex-imported rows this is the
+   *  UI alias "Codex (imported)", not the stored entry name. */
   label: string;
+  /** Actual stored provider name — the value that round-trips through
+   *  updateProvider. Differs from `label` for codex rows. */
+  name: string;
   builtin: boolean;
   wire: WireApi;
   defaultModel: string;
@@ -64,7 +71,11 @@ export function assertProviderHasStoredSecret(cfg: Config, provider: string): vo
 }
 
 export function isKeylessProviderAllowed(provider: string, entry?: ProviderEntry | null): boolean {
-  const isCodexFamily = provider.startsWith('codex-') || provider === 'chatgpt-codex';
+  // Providers that explicitly opt out of API keys (e.g. local Ollama, a
+  // self-hosted LiteLLM fronting IP-whitelisted models). The flag lets any
+  // provider — builtin or custom — declare keyless-ness at config time.
+  if (entry?.requiresApiKey === false) return true;
+  const isCodexFamily = provider.startsWith('codex-') || provider === CHATGPT_CODEX_PROVIDER_ID;
   return isCodexFamily && entry?.requiresApiKey !== true && entry?.envKey === undefined;
 }
 
@@ -90,6 +101,16 @@ export function toProviderRows(
     ...Object.keys(cfg.providers ?? {}),
     ...Object.keys(cfg.secrets ?? {}),
   ]);
+  // Keyless builtins (e.g. Ollama) always surface as rows so users can
+  // discover + enable them without going through onboarding first. Without
+  // this, a fresh v3 install would hide Ollama entirely — the providers
+  // map gets populated lazily during onboarding, but Ollama has no
+  // onboarding step to run.
+  for (const builtinId of SUPPORTED_ONBOARDING_PROVIDERS) {
+    if (BUILTIN_PROVIDERS[builtinId].requiresApiKey === false) {
+      allIds.add(builtinId);
+    }
+  }
   for (const provider of allIds) {
     const ref = cfg.secrets?.[provider];
     const entry = resolveEntryFor(cfg, provider);
@@ -100,7 +121,7 @@ export function toProviderRows(
       // Prefer the persisted mask — avoids triggering a keychain password
       // prompt on unsigned macOS builds just to render the Settings row.
       // Fall back to decrypting once for legacy configs that pre-date the
-      // mask field; `migrateSecretMasks` should have rewritten them, but
+      // mask field; `migrateSecrets` should have rewritten them, but
       // we stay resilient in case migration didn't complete.
       if (ref.mask !== undefined && ref.mask.length > 0) {
         maskedKey = ref.mask;
@@ -126,6 +147,10 @@ export function toProviderRows(
       baseUrl: entry?.baseUrl ?? null,
       isActive: cfg.activeProvider === provider,
       label,
+      // The real stored name (or the builtin default) — used by the edit
+      // modal so a codex-imported row doesn't overwrite `entry.name` with
+      // the display alias "Codex (imported)" on save.
+      name: entry?.name ?? label,
       builtin: entry?.builtin ?? isSupportedOnboardingProvider(provider),
       wire: entry?.wire ?? 'openai-chat',
       defaultModel:

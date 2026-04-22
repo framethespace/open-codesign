@@ -5,11 +5,22 @@
  * process-level state (no Date.now, no app.getPath, etc.).
  */
 
-import type { ActionTimelineEntry, DiagnosticEventRow } from '@open-codesign/shared';
+import type { ActionTimelineEntry, ReportableError } from '@open-codesign/shared';
 import { normalizeFrame } from '@open-codesign/shared/fingerprint';
 
 export interface SummaryInput {
-  event: DiagnosticEventRow;
+  /** The canonical in-memory error record. Since the Report flow no longer
+   *  requires a diagnostic_events row to exist, the composer works off the
+   *  ReportableError payload the renderer sent. */
+  error: ReportableError;
+  /** Optional DB row count for this fingerprint. Falls back to 1 when the row
+   *  was never persisted (Report still works without it). */
+  count?: number;
+  /** Optional level label — defaults to "error" for ReportableError callers. */
+  level?: 'info' | 'warn' | 'error';
+  /** Optional — "retried and succeeded". Legacy DB rows carry this flag;
+   *  in-memory ReportableErrors default to false. */
+  transient?: boolean;
   appVersion: string;
   platform: string;
   electronVersion: string;
@@ -25,33 +36,36 @@ export interface SummaryInput {
 
 const MAX_BYTES = 20 * 1024;
 const TRUNCATION_SUFFIX = '\n\n_(summary truncated to 20 KB — full bundle attached as zip)_';
-const PROMPT_OMITTED = '<prompt omitted>';
-const PATH_OMITTED = '<path omitted>';
-const URL_OMITTED = '<url omitted>';
+const PROMPT_OMITTED = '[prompt omitted]';
+const PATH_OMITTED = '[path omitted]';
+const URL_OMITTED = '[url omitted]';
 const PATH_REGEX =
-  /(?:(?:[A-Za-z]:\\|\\\\)[^\s'"<>`]+|(?:[/\\](?:Users|home|root|opt|Applications))[/\\][^\s'"<>`]+|~[/\\][^\s'"<>`]+)/g;
+  /(?:(?:\b[A-Za-z]:[\\/]|\\\\)[^\s'"<>`]+|(?:[/\\](?:Users|home|root|opt|Applications|var|tmp|etc|private))[/\\][^\s'"<>`]+|~[/\\][^\s'"<>`]+)/g;
 const URL_REGEX = /(?:https?|wss?|file):\/\/[^\s'"<>]+/g;
 
 export function composeSummaryMarkdown(input: SummaryInput): string {
-  const { event } = input;
-  const occurredAt = new Date(event.ts).toISOString();
-  const runId = event.runId ?? '(none)';
-  const transient = event.transient ? 'yes' : 'no';
+  const { error } = input;
+  const count = input.count ?? 1;
+  const level = input.level ?? 'error';
+  const transientFlag = input.transient === true;
+  const occurredAt = new Date(error.ts).toISOString();
+  const runId = error.runId ?? '(none)';
+  const transient = transientFlag ? 'yes' : 'no';
 
-  const message = redact(event.message, input);
-  const stackSection = renderStack(event.stack);
-  const upstreamSection = renderUpstream(event, input);
+  const message = redact(error.message, input);
+  const stackSection = renderStack(error.stack, input);
+  const upstreamSection = renderUpstream(error, input);
   const timelineSection = renderTimeline(input);
   const logSection = renderLogTail(input);
   const notesSection = renderNotes(input.notes);
 
   const lines: string[] = [];
-  lines.push(`# Diagnostic Report — ${event.code}`);
+  lines.push(`# Diagnostic Report — ${error.code}`);
   lines.push('');
-  lines.push(`**Fingerprint:** \`${event.fingerprint}\`  (seen ${event.count} times)`);
+  lines.push(`**Fingerprint:** \`${error.fingerprint}\`  (seen ${count} times)`);
   lines.push(`**Occurred at:** ${occurredAt}`);
   lines.push(`**Run id:** \`${runId}\``);
-  lines.push(`**Scope:** \`${event.scope}\``);
+  lines.push(`**Scope:** \`${error.scope}\``);
   lines.push('');
   lines.push('## Environment');
   lines.push(`- App: ${input.appVersion}`);
@@ -59,9 +73,9 @@ export function composeSummaryMarkdown(input: SummaryInput): string {
   lines.push(`- Electron: ${input.electronVersion} / Node: ${input.nodeVersion}`);
   lines.push('');
   lines.push('## Error');
-  lines.push(`- Code: \`${event.code}\``);
-  lines.push(`- Message: ${message}`);
-  lines.push(`- Level: ${event.level}`);
+  lines.push(`- Code: \`${error.code}\``);
+  lines.push(`- Message: ${mdInlineCode(message)}`);
+  lines.push(`- Level: ${level}`);
   lines.push(`- Transient (retried and succeeded): ${transient}`);
   lines.push('');
   lines.push('### Stack (top 5 frames)');
@@ -90,7 +104,7 @@ export function composeSummaryMarkdown(input: SummaryInput): string {
   return capLength(body);
 }
 
-function renderStack(stack: string | undefined): string {
+function renderStack(stack: string | undefined, input?: SummaryInput): string {
   if (typeof stack !== 'string' || stack.trim().length === 0) {
     return '```\n(no stack)\n```';
   }
@@ -102,12 +116,23 @@ function renderStack(stack: string | undefined): string {
     if (frames.length >= 5) break;
   }
   if (frames.length === 0) return '```\n(no stack)\n```';
-  return ['```', ...frames, '```'].join('\n');
+  // Defense-in-depth: even if normalizeFrame misses an exotic form, run the
+  // path/url redactor so disabled toggles are honored at the rendered layer.
+  const redacted =
+    input !== undefined && (!input.includePaths || !input.includeUrls)
+      ? frames.map((line) =>
+          redactPathsAndUrls(line, {
+            includePaths: input.includePaths,
+            includeUrls: input.includeUrls,
+          }),
+        )
+      : frames;
+  return ['```', ...redacted, '```'].join('\n');
 }
 
-function renderUpstream(event: DiagnosticEventRow, input: SummaryInput): string | undefined {
-  if (event.scope !== 'provider') return undefined;
-  const ctx = event.context;
+function renderUpstream(error: ReportableError, input: SummaryInput): string | undefined {
+  if (error.scope !== 'provider') return undefined;
+  const ctx = error.context;
   if (ctx === undefined) return undefined;
   const provider = asString(ctx['upstream_provider']);
   const status = asString(ctx['upstream_status']);
@@ -121,7 +146,15 @@ function renderUpstream(event: DiagnosticEventRow, input: SummaryInput): string 
         ? bodyHead
         : scrubPromptInLine(bodyHead);
   const redactedBody =
-    scrubbedBody === undefined ? undefined : truncate(redactPathsAndUrls(scrubbedBody, input), 400);
+    scrubbedBody === undefined
+      ? undefined
+      : truncate(
+          redactPathsAndUrls(scrubbedBody, {
+            includePaths: input.includePaths,
+            includeUrls: input.includeUrls,
+          }),
+          400,
+        );
   const rows: string[] = [];
   if (provider !== undefined) rows.push(`- Provider: ${provider}`);
   if (status !== undefined) rows.push(`- Status: ${status}`);
@@ -142,9 +175,14 @@ function renderTimeline(input: SummaryInput): string {
   rows.push('| Offset | Type | Details |');
   rows.push('|---|---|---|');
   for (const entry of sorted) {
-    const offset = Math.round((entry.ts - input.event.ts) / 1000);
+    const offset = Math.round((entry.ts - input.error.ts) / 1000);
     const offsetLabel = `${offset} s`;
-    const details = formatTimelineData(entry.data);
+    let details = formatTimelineData(entry.data);
+    if (!input.includePromptText) details = scrubPromptInLine(details);
+    details = redactPathsAndUrls(details, {
+      includePaths: input.includePaths,
+      includeUrls: input.includeUrls,
+    });
     rows.push(`| ${offsetLabel} | ${entry.type} | ${details} |`);
   }
   return rows.join('\n');
@@ -169,17 +207,20 @@ function formatValue(value: unknown): string {
 function renderLogTail(input: SummaryInput): string {
   const lines = input.recentLogTail.map((line) => {
     const scrubbed = input.includePromptText ? line : scrubPromptInLine(line);
-    return redactPathsAndUrls(scrubbed, input);
+    return redactPathsAndUrls(scrubbed, {
+      includePaths: input.includePaths,
+      includeUrls: input.includeUrls,
+    });
   });
   if (lines.length === 0) return '```\n(no log tail)\n```';
   return ['```', ...lines, '```'].join('\n');
 }
 
-function scrubPromptInLine(line: string): string {
+export function scrubPromptInLine(line: string): string {
   return line
-    .replace(/("prompt"\s*:\s*)"(?:[^"\\]|\\.)*"/g, '$1"<prompt omitted>"')
-    .replace(/(\bprompt\s*[:=]\s*)"(?:[^"\\]|\\.)*"/g, '$1"<prompt omitted>"')
-    .replace(/(\bprompt\s*[:=]\s*)`(?:[^`\\]|\\.)*`/g, '$1`<prompt omitted>`');
+    .replace(/("prompt"\s*:\s*)"(?:[^"\\]|\\.)*"/g, '$1"[prompt omitted]"')
+    .replace(/(\bprompt\s*[:=]\s*)"(?:[^"\\]|\\.)*"/g, '$1"[prompt omitted]"')
+    .replace(/(\bprompt\s*[:=]\s*)`(?:[^`\\]|\\.)*`/g, '$1`[prompt omitted]`');
 }
 
 function renderNotes(notes: string): string {
@@ -191,13 +232,19 @@ function redact(text: string, input: SummaryInput): string {
   if (!input.includePromptText && looksLikePrompt(out)) {
     out = PROMPT_OMITTED;
   }
-  return redactPathsAndUrls(out, input);
+  return redactPathsAndUrls(out, {
+    includePaths: input.includePaths,
+    includeUrls: input.includeUrls,
+  });
 }
 
-function redactPathsAndUrls(text: string, input: SummaryInput): string {
+export function redactPathsAndUrls(
+  text: string,
+  opts: { includePaths: boolean; includeUrls: boolean },
+): string {
   let out = text;
-  if (!input.includePaths) out = out.replace(PATH_REGEX, PATH_OMITTED);
-  if (!input.includeUrls) out = out.replace(URL_REGEX, URL_OMITTED);
+  if (!opts.includePaths) out = out.replace(PATH_REGEX, PATH_OMITTED);
+  if (!opts.includeUrls) out = out.replace(URL_REGEX, URL_OMITTED);
   return out;
 }
 
@@ -216,6 +263,21 @@ function looksLikePrompt(text: string): boolean {
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   return `${text.slice(0, max)}…`;
+}
+
+/**
+ * Wrap a string in a markdown inline-code span using a backtick run that
+ * doesn't collide with anything inside the string. Prevents a stray
+ * backtick in a raw error message from opening a code span that eats the
+ * lines below it on GitHub.
+ */
+export function mdInlineCode(s: string): string {
+  if (!s.includes('`')) return `\`${s}\``;
+  const runs = s.match(/`+/g) ?? [];
+  const longest = runs.reduce((n, r) => Math.max(n, r.length), 0);
+  const delim = '`'.repeat(longest + 1);
+  const pad = s.startsWith('`') || s.endsWith('`') ? ' ' : '';
+  return `${delim}${pad}${s}${pad}${delim}`;
 }
 
 function asString(value: unknown): string | undefined {

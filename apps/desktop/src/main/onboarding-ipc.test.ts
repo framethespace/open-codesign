@@ -64,15 +64,7 @@ vi.mock('./keychain', () => ({
     ciphertext: `enc:${s}`,
     mask: s.length > 8 ? `${s.slice(0, 4)}***${s.slice(-4)}` : '***',
   })),
-  tryBuildSecretRef: vi.fn((s: string) => ({
-    ciphertext: `enc:${s}`,
-    mask: s.length > 8 ? `${s.slice(0, 4)}***${s.slice(-4)}` : '***',
-  })),
   migrateSecrets: vi.fn((cfg: { secrets?: Record<string, unknown> }) => ({
-    config: cfg,
-    changed: false,
-  })),
-  migrateSecretMasks: vi.fn((cfg: { secrets?: Record<string, unknown> }) => ({
     config: cfg,
     changed: false,
   })),
@@ -97,10 +89,30 @@ vi.mock('./logger', () => ({
 
 vi.mock('./imports/codex-config', () => ({
   readCodexConfig: vi.fn(async () => null),
+  codexAuthPath: vi.fn(() => '/tmp/codex-auth.json'),
+  ALLOWED_IMPORT_ENV_KEYS: new Set([
+    'ANTHROPIC_API_KEY',
+    'ANTHROPIC_AUTH_TOKEN',
+    'CEREBRAS_API_KEY',
+    'DEEPSEEK_API_KEY',
+    'GEMINI_API_KEY',
+    'GROQ_API_KEY',
+    'OPENAI_API_KEY',
+    'OPENROUTER_API_KEY',
+    'XAI_API_KEY',
+  ]),
 }));
 
 vi.mock('./imports/claude-code-config', () => ({
   readClaudeCodeSettings: vi.fn(async () => null),
+}));
+
+vi.mock('./imports/gemini-cli-config', () => ({
+  readGeminiCliConfig: vi.fn(async () => null),
+}));
+
+vi.mock('./imports/opencode-config', () => ({
+  readOpencodeConfig: vi.fn(async () => null),
 }));
 
 vi.mock('@open-codesign/providers', () => ({
@@ -303,9 +315,9 @@ describe('config:v1:import-codex-config empty env handling', () => {
 
   it('encrypts Codex auth.json API keys for providers requiring OpenAI auth', async () => {
     const { readCodexConfig } = await import('./imports/codex-config');
-    const { tryBuildSecretRef } = await import('./keychain');
+    const { buildSecretRef } = await import('./keychain');
     const { writeConfig } = await import('./config');
-    vi.mocked(tryBuildSecretRef).mockClear();
+    vi.mocked(buildSecretRef).mockClear();
     vi.mocked(writeConfig).mockClear();
     vi.mocked(readCodexConfig).mockResolvedValueOnce({
       providers: [
@@ -333,7 +345,7 @@ describe('config:v1:import-codex-config empty env handling', () => {
       hasKey: true,
     });
 
-    expect(tryBuildSecretRef).toHaveBeenCalledWith('sk-codex-auth');
+    expect(buildSecretRef).toHaveBeenCalledWith('sk-codex-auth');
     const written = vi.mocked(writeConfig).mock.calls.at(-1)?.[0];
     expect(written?.secrets['codex-custom']).toEqual(
       expect.objectContaining({ ciphertext: 'enc:sk-codex-auth' }),
@@ -459,7 +471,11 @@ describe('config:v1:import-claude-code-config — user-type branching', () => {
 
 describe('getApiKeyForProvider — envKey runtime fallback', () => {
   it('returns process.env[entry.envKey] when secret is absent but env is set', async () => {
-    const ENV_NAME = 'OPEN_CODESIGN_TEST_ENV_FALLBACK_KEY';
+    // Use an allowlisted env var name so the defense-in-depth check in
+    // getApiKeyForProvider doesn't block the lookup. ANTHROPIC_API_KEY is
+    // on the allowlist and unlikely to be set in CI.
+    const ENV_NAME = 'ANTHROPIC_API_KEY';
+    const saved = process.env[ENV_NAME];
     process.env[ENV_NAME] = 'sk-from-shell-env';
     const { readConfig } = await import('./config');
     vi.mocked(readConfig).mockResolvedValueOnce({
@@ -486,11 +502,14 @@ describe('getApiKeyForProvider — envKey runtime fallback', () => {
     await loadConfigOnBoot();
 
     expect(getApiKeyForProvider('fallback-test')).toBe('sk-from-shell-env');
-    delete process.env[ENV_NAME];
+    if (saved === undefined) delete process.env[ENV_NAME];
+    else process.env[ENV_NAME] = saved;
   });
 
   it('throws PROVIDER_KEY_MISSING when both secret and envKey are absent', async () => {
-    const ENV_NAME = 'OPEN_CODESIGN_TEST_ENV_FALLBACK_EMPTY';
+    // Pick an allowlisted name that we know is not set in CI.
+    const ENV_NAME = 'CEREBRAS_API_KEY';
+    const saved = process.env[ENV_NAME];
     delete process.env[ENV_NAME];
     const { readConfig } = await import('./config');
     vi.mocked(readConfig).mockResolvedValueOnce({
@@ -517,6 +536,44 @@ describe('getApiKeyForProvider — envKey runtime fallback', () => {
     await loadConfigOnBoot();
 
     expect(() => getApiKeyForProvider('no-key')).toThrow(/PROVIDER_KEY_MISSING|No API key stored/);
+    if (saved !== undefined) process.env[ENV_NAME] = saved;
+  });
+
+  it('refuses to resolve non-allowlisted envKey (defense-in-depth against legacy configs)', async () => {
+    // A pre-allowlist config might carry `envKey: "AWS_SECRET_ACCESS_KEY"`
+    // from a malicious Codex config.toml that landed before the guard was
+    // installed. getApiKeyForProvider must still refuse to exfiltrate it.
+    const ENV_NAME = 'AWS_SECRET_ACCESS_KEY';
+    const saved = process.env[ENV_NAME];
+    process.env[ENV_NAME] = 'should-never-be-returned';
+    const { readConfig } = await import('./config');
+    vi.mocked(readConfig).mockResolvedValueOnce({
+      version: 3,
+      activeProvider: 'attacker',
+      activeModel: 'x',
+      secrets: {},
+      providers: {
+        attacker: {
+          id: 'attacker',
+          name: 'Attacker',
+          builtin: false,
+          wire: 'openai-chat',
+          baseUrl: 'https://attacker.example/v1',
+          defaultModel: 'x',
+          envKey: ENV_NAME,
+        },
+      },
+      provider: 'attacker',
+      modelPrimary: 'x',
+      baseUrls: {},
+    });
+    const { loadConfigOnBoot, getApiKeyForProvider } = await import('./onboarding-ipc');
+    await loadConfigOnBoot();
+    expect(() => getApiKeyForProvider('attacker')).toThrow(
+      /PROVIDER_KEY_MISSING|No API key stored/,
+    );
+    if (saved === undefined) delete process.env[ENV_NAME];
+    else process.env[ENV_NAME] = saved;
   });
 });
 
@@ -568,5 +625,316 @@ describe('config:v1:detect-external-configs — payload shape', () => {
       settingsPath: '/home/alice/.claude/settings.json',
       warnings: ['apiKeyHelper detected'],
     });
+  });
+});
+
+describe('config:v1:detect-external-configs — never leaks plaintext keys', () => {
+  // Regression guard for the "apiKeyMap crosses IPC" silent leak fixed
+  // earlier in this PR chain. Electron's structured clone ships every own
+  // property regardless of the TypeScript facade, so this test verifies
+  // the runtime payload — not the type — omits the secret fields.
+  it('strips apiKeyMap and envKeyMap from Codex before returning', async () => {
+    const { readCodexConfig } = await import('./imports/codex-config');
+    vi.mocked(readCodexConfig).mockResolvedValueOnce({
+      providers: [
+        {
+          id: 'codex-deepseek',
+          name: 'Codex (imported)',
+          builtin: false,
+          wire: 'openai-chat',
+          baseUrl: 'https://api.deepseek.com/v1',
+          defaultModel: 'deepseek-chat',
+          envKey: 'DEEPSEEK_API_KEY',
+        },
+      ],
+      activeProvider: 'codex-deepseek',
+      activeModel: 'deepseek-chat',
+      envKeyMap: { 'codex-deepseek': 'DEEPSEEK_API_KEY' },
+      apiKeyMap: { 'codex-deepseek': 'sk-secret-ant-should-never-leak' },
+      warnings: [],
+    });
+
+    const handler = handlers.get('config:v1:detect-external-configs');
+    expect(handler).toBeDefined();
+    const result = (await handler?.()) as Record<string, unknown>;
+
+    expect(result['codex']).toBeDefined();
+    const codex = result['codex'] as Record<string, unknown>;
+    expect(codex['apiKeyMap']).toBeUndefined();
+    expect(codex['envKeyMap']).toBeUndefined();
+    // Belt and suspenders: the full serialized payload should not contain
+    // the secret string anywhere — catches future changes that stuff the
+    // key under a different field name.
+    expect(JSON.stringify(result)).not.toContain('sk-secret-ant-should-never-leak');
+  });
+
+  it('strips apiKeyMap from OpenCode before returning', async () => {
+    const { readOpencodeConfig } = await import('./imports/opencode-config');
+    vi.mocked(readOpencodeConfig).mockResolvedValueOnce({
+      providers: [
+        {
+          id: 'opencode-anthropic',
+          name: 'OpenCode · Anthropic',
+          builtin: false,
+          wire: 'anthropic',
+          baseUrl: 'https://api.anthropic.com',
+          defaultModel: 'claude-sonnet-4-6',
+          envKey: 'ANTHROPIC_API_KEY',
+        },
+      ],
+      apiKeyMap: { 'opencode-anthropic': 'sk-opencode-secret-leak-canary' },
+      activeProvider: null,
+      activeModel: null,
+      warnings: [],
+    });
+
+    const handler = handlers.get('config:v1:detect-external-configs');
+    const result = (await handler?.()) as Record<string, unknown>;
+
+    expect(result['opencode']).toBeDefined();
+    const oc = result['opencode'] as Record<string, unknown>;
+    expect(oc['apiKeyMap']).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain('sk-opencode-secret-leak-canary');
+  });
+});
+
+describe('config:v1:import-gemini-config — merge logic', () => {
+  it('writes a gemini-import provider with the key stored under that id', async () => {
+    const { readGeminiCliConfig } = await import('./imports/gemini-cli-config');
+    const { writeConfig } = await import('./config');
+    vi.mocked(writeConfig).mockClear();
+    vi.mocked(readGeminiCliConfig).mockResolvedValueOnce({
+      kind: 'found',
+      provider: {
+        id: 'gemini-import',
+        name: 'Gemini (imported)',
+        builtin: false,
+        wire: 'openai-chat',
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        defaultModel: 'gemini-2.5-flash',
+        envKey: 'GEMINI_API_KEY',
+      },
+      apiKey: 'AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ0123456',
+      apiKeySource: 'gemini-env',
+      keyPath: '/home/alice/.gemini/.env',
+      warnings: [],
+    });
+
+    const handler = handlers.get('config:v1:import-gemini-config');
+    expect(handler).toBeDefined();
+    await handler?.({} as unknown);
+
+    const written = vi.mocked(writeConfig).mock.calls.at(-1)?.[0];
+    expect(written?.providers['gemini-import']).toMatchObject({
+      id: 'gemini-import',
+      wire: 'openai-chat',
+      envKey: 'GEMINI_API_KEY',
+    });
+    expect(written?.secrets['gemini-import']).toEqual(
+      expect.objectContaining({ ciphertext: expect.stringContaining('AIzaSy') }),
+    );
+    // Fresh install: gemini-import should become the active provider.
+    expect(written?.activeProvider).toBe('gemini-import');
+    expect(written?.activeModel).toBe('gemini-2.5-flash');
+  });
+
+  it('throws CONFIG_MISSING when the parser returns a Vertex-blocked result', async () => {
+    const { readGeminiCliConfig } = await import('./imports/gemini-cli-config');
+    vi.mocked(readGeminiCliConfig).mockResolvedValueOnce({
+      kind: 'blocked',
+      warnings: ['Vertex AI detected (GOOGLE_GENAI_USE_VERTEXAI=true). ...'],
+    });
+
+    const handler = handlers.get('config:v1:import-gemini-config');
+    await expect(handler?.({} as unknown)).rejects.toThrow(/Vertex/);
+  });
+
+  it('is idempotent: re-import overwrites the existing gemini-import row', async () => {
+    const { readGeminiCliConfig } = await import('./imports/gemini-cli-config');
+    const { writeConfig } = await import('./config');
+    const fresh = {
+      kind: 'found' as const,
+      provider: {
+        id: 'gemini-import',
+        name: 'Gemini (imported)',
+        builtin: false as const,
+        wire: 'openai-chat' as const,
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        defaultModel: 'gemini-2.5-flash',
+        envKey: 'GEMINI_API_KEY',
+      },
+      apiKey: `AIzaSy${'z'.repeat(33)}`,
+      apiKeySource: 'gemini-env' as const,
+      keyPath: '/home/alice/.gemini/.env',
+      warnings: [] as string[],
+    };
+    vi.mocked(readGeminiCliConfig).mockResolvedValueOnce(fresh);
+    vi.mocked(writeConfig).mockClear();
+    const handler = handlers.get('config:v1:import-gemini-config');
+    await handler?.({} as unknown);
+
+    // Second call should produce a single provider row, not a duplicate.
+    vi.mocked(readGeminiCliConfig).mockResolvedValueOnce({
+      ...fresh,
+      apiKey: `AIzaSy${'r'.repeat(33)}`, // rotated key
+    });
+    await handler?.({} as unknown);
+
+    const written = vi.mocked(writeConfig).mock.calls.at(-1)?.[0];
+    const geminiIds = Object.keys(written?.providers ?? {}).filter((id) =>
+      id.startsWith('gemini-import'),
+    );
+    expect(geminiIds).toEqual(['gemini-import']);
+    // Rotated key should win.
+    expect(written?.secrets['gemini-import']).toEqual(
+      expect.objectContaining({
+        ciphertext: expect.stringContaining('r'.repeat(33)),
+      }),
+    );
+  });
+});
+
+describe('config:v1:import-opencode-config — merge logic', () => {
+  it('imports multiple providers and resolves activeProvider from the config file', async () => {
+    const { readOpencodeConfig } = await import('./imports/opencode-config');
+    const { writeConfig } = await import('./config');
+    vi.mocked(writeConfig).mockClear();
+    vi.mocked(readOpencodeConfig).mockResolvedValueOnce({
+      providers: [
+        {
+          id: 'opencode-openai',
+          name: 'OpenCode · OpenAI',
+          builtin: false,
+          wire: 'openai-chat',
+          baseUrl: 'https://api.openai.com/v1',
+          defaultModel: 'gpt-4o',
+          envKey: 'OPENAI_API_KEY',
+        },
+        {
+          id: 'opencode-anthropic',
+          name: 'OpenCode · Anthropic',
+          builtin: false,
+          wire: 'anthropic',
+          baseUrl: 'https://api.anthropic.com',
+          // User's opencode.json said `model: "anthropic/claude-opus-4-1"`,
+          // so readOpencodeConfig already rewrote this entry's defaultModel.
+          defaultModel: 'claude-opus-4-1',
+          envKey: 'ANTHROPIC_API_KEY',
+        },
+      ],
+      apiKeyMap: {
+        'opencode-openai': 'sk-opencode-oai',
+        'opencode-anthropic': 'sk-opencode-ant',
+      },
+      activeProvider: 'opencode-anthropic',
+      activeModel: 'claude-opus-4-1',
+      warnings: [],
+    });
+
+    const handler = handlers.get('config:v1:import-opencode-config');
+    await handler?.({} as unknown);
+
+    const written = vi.mocked(writeConfig).mock.calls.at(-1)?.[0];
+    expect(Object.keys(written?.providers ?? {}).sort()).toEqual(
+      expect.arrayContaining(['opencode-anthropic', 'opencode-openai']),
+    );
+    expect(written?.secrets['opencode-openai']).toEqual(
+      expect.objectContaining({ ciphertext: expect.stringContaining('sk-opencode-oai') }),
+    );
+    expect(written?.secrets['opencode-anthropic']).toEqual(
+      expect.objectContaining({ ciphertext: expect.stringContaining('sk-opencode-ant') }),
+    );
+    // The detected active model wins over first-provider-alphabetic.
+    expect(written?.activeProvider).toBe('opencode-anthropic');
+    expect(written?.activeModel).toBe('claude-opus-4-1');
+  });
+
+  it('falls back to the first imported provider when activeProvider is null', async () => {
+    const { readOpencodeConfig } = await import('./imports/opencode-config');
+    const { writeConfig } = await import('./config');
+    vi.mocked(writeConfig).mockClear();
+    vi.mocked(readOpencodeConfig).mockResolvedValueOnce({
+      providers: [
+        {
+          id: 'opencode-deepseek',
+          name: 'OpenCode · DeepSeek',
+          builtin: false,
+          wire: 'openai-chat',
+          baseUrl: 'https://api.deepseek.com/v1',
+          defaultModel: 'deepseek-chat',
+          envKey: 'DEEPSEEK_API_KEY',
+        },
+      ],
+      apiKeyMap: { 'opencode-deepseek': 'sk-ds' },
+      activeProvider: null,
+      activeModel: null,
+      warnings: [],
+    });
+
+    const handler = handlers.get('config:v1:import-opencode-config');
+    await handler?.({} as unknown);
+
+    const written = vi.mocked(writeConfig).mock.calls.at(-1)?.[0];
+    expect(written?.activeProvider).toBe('opencode-deepseek');
+  });
+
+  it('throws CONFIG_MISSING when the parser produced zero providers', async () => {
+    const { readOpencodeConfig } = await import('./imports/opencode-config');
+    vi.mocked(readOpencodeConfig).mockResolvedValueOnce({
+      providers: [],
+      apiKeyMap: {},
+      activeProvider: null,
+      activeModel: null,
+      warnings: ['OpenCode auth.json is not valid JSON: ...'],
+    });
+
+    const handler = handlers.get('config:v1:import-opencode-config');
+    await expect(handler?.({} as unknown)).rejects.toThrow(/importable API provider/i);
+  });
+});
+
+describe('detectChatgptSubscription — non-ENOENT failure handling', () => {
+  it('returns true when auth.json has auth_mode: chatgpt', async () => {
+    const { detectChatgptSubscription } = await import('./onboarding-ipc');
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = join(tmpdir(), `codesign-subscription-${Date.now()}-${Math.random()}`);
+    await mkdir(dir, { recursive: true });
+    const path = join(dir, 'auth.json');
+    await writeFile(path, JSON.stringify({ auth_mode: 'chatgpt' }), 'utf8');
+    await expect(detectChatgptSubscription(path)).resolves.toBe(true);
+  });
+
+  it('returns false when auth.json has a different auth_mode', async () => {
+    const { detectChatgptSubscription } = await import('./onboarding-ipc');
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = join(tmpdir(), `codesign-subscription-${Date.now()}-${Math.random()}`);
+    await mkdir(dir, { recursive: true });
+    const path = join(dir, 'auth.json');
+    await writeFile(path, JSON.stringify({ OPENAI_API_KEY: 'sk-...' }), 'utf8');
+    await expect(detectChatgptSubscription(path)).resolves.toBe(false);
+  });
+
+  it('returns false when auth.json is absent (ENOENT is silent)', async () => {
+    const { detectChatgptSubscription } = await import('./onboarding-ipc');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const path = join(tmpdir(), `codesign-nonexistent-${Date.now()}-${Math.random()}.json`);
+    await expect(detectChatgptSubscription(path)).resolves.toBe(false);
+  });
+
+  it('returns false on malformed JSON without throwing', async () => {
+    const { detectChatgptSubscription } = await import('./onboarding-ipc');
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = join(tmpdir(), `codesign-malformed-${Date.now()}-${Math.random()}`);
+    await mkdir(dir, { recursive: true });
+    const path = join(dir, 'auth.json');
+    await writeFile(path, '{"auth_mode":', 'utf8');
+    await expect(detectChatgptSubscription(path)).resolves.toBe(false);
   });
 });

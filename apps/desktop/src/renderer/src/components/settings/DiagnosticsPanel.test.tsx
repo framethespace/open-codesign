@@ -5,6 +5,7 @@ import {
   handleExportBundle,
   handleOpenLogFolder,
   loadDiagnosticEvents,
+  reportableToRow,
   truncateMessage,
 } from './DiagnosticsPanel';
 
@@ -119,11 +120,64 @@ describe('formatting helpers', () => {
     expect(formatRunIdPreview(undefined)).toBe('—');
   });
 
-  it('formats relative time in s/m/h/d', () => {
+  it('formats relative time via Intl.RelativeTimeFormat (en)', () => {
     const now = 1_000_000_000_000;
-    expect(formatRelativeTime(now - 5_000, now)).toBe('5s');
-    expect(formatRelativeTime(now - 120_000, now)).toBe('2m');
-    expect(formatRelativeTime(now - 3 * 3_600_000, now)).toBe('3h');
-    expect(formatRelativeTime(now - 2 * 86_400_000, now)).toBe('2d');
+    expect(formatRelativeTime(now - 5_000, now, 'en')).toBe('5 seconds ago');
+    expect(formatRelativeTime(now - 120_000, now, 'en')).toBe('2 minutes ago');
+    expect(formatRelativeTime(now - 3 * 3_600_000, now, 'en')).toBe('3 hours ago');
+    expect(formatRelativeTime(now - 2 * 86_400_000, now, 'en')).toBe('2 days ago');
+  });
+
+  it('localizes relative time into zh-CN', () => {
+    const now = 1_000_000_000_000;
+    const out = formatRelativeTime(now - 3 * 60_000, now, 'zh-CN');
+    // ICU may emit "3 分钟前" or "3分钟前" depending on CLDR version — both
+    // are valid localizations; just assert we're no longer in Latin shorthand.
+    expect(out).toContain('3');
+    expect(out).toContain('分');
+    expect(out).not.toBe('3m');
+  });
+});
+
+describe('reportableToRow', () => {
+  it('projects a ReportableError into the DB-row shape used by the table', () => {
+    const row = reportableToRow({
+      localId: 'local-7',
+      code: 'CONNECTION_TEST_FAILED',
+      scope: 'settings',
+      message: 'HTTP 401',
+      fingerprint: 'fp-client',
+      ts: 1_700_000_000_000,
+      runId: 'abc',
+      context: { provider: 'openai' },
+    });
+    expect(row).toMatchObject({
+      level: 'error',
+      code: 'CONNECTION_TEST_FAILED',
+      scope: 'settings',
+      message: 'HTTP 401',
+      fingerprint: 'fp-client',
+      ts: 1_700_000_000_000,
+      runId: 'abc',
+      context: { provider: 'openai' },
+      transient: false,
+    });
+    // Missing persistedEventId collapses to -1 so the React key is still unique.
+    expect(row.id).toBe(-1);
+  });
+
+  it('prefers the main-side persisted fingerprint when present', () => {
+    const row = reportableToRow({
+      localId: 'local-8',
+      code: 'X',
+      scope: 'y',
+      message: 'm',
+      fingerprint: 'client-fp',
+      persistedFingerprint: 'main-fp',
+      persistedEventId: 42,
+      ts: 1,
+    });
+    expect(row.fingerprint).toBe('main-fp');
+    expect(row.id).toBe(42);
   });
 });

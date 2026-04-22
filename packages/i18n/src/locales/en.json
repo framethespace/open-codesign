@@ -34,7 +34,8 @@
       "parsing": "Finalizing…",
       "rendering": "Rendering preview…",
       "done": "Done"
-    }
+    },
+    "tokens": "{{count}} tokens"
   },
   "canvas": {
     "filesTab": "Files",
@@ -171,8 +172,16 @@
       "sectionTitle": "API Providers",
       "chatgptLogin": {
         "title": "Sign in with ChatGPT subscription",
-        "description": "Use your ChatGPT Plus / Pro / Team plan quota to call Codex models (gpt-5.3-codex and friends) — no API key needed. Still polishing, shipping in the next release.",
-        "comingSoon": "Coming soon"
+        "description": "Use your ChatGPT Plus / Pro / Team plan quota to call Codex models (gpt-5.3-codex and friends) — no API key needed.",
+        "signIn": "Sign in with ChatGPT",
+        "inProgress": "Browser opened. Complete the authorization and we'll return automatically…",
+        "loggedInBadge": "Signed in with ChatGPT",
+        "logout": "Sign out",
+        "confirmLogout": "Sign out of ChatGPT subscription?",
+        "loginFailedTitle": "ChatGPT sign-in failed",
+        "logoutFailedTitle": "ChatGPT sign-out failed",
+        "statusFailedTitle": "ChatGPT status check failed",
+        "unknownError": "Unknown error"
       },
       "addProvider": "Add provider",
       "addCustom": "Add custom",
@@ -181,8 +190,11 @@
       "decryptionFailed": "Decryption failed",
       "setActive": "Set active",
       "reEnterKey": "Re-enter key",
+      "missingKey": "Missing key",
+      "addKey": "Add key",
       "confirm": "Confirm",
       "delete": "Delete",
+      "edit": "Edit",
       "testConnection": "Test connection",
       "moreActions": "More actions",
       "editModel": "Change model",
@@ -191,6 +203,7 @@
       "fast": "Fast",
       "custom": {
         "title": "Add custom endpoint",
+        "editTitle": "Edit provider",
         "wire": "Wire protocol",
         "wires": {
           "openai-chat": "OpenAI Chat",
@@ -200,38 +213,36 @@
         "name": "Label",
         "baseUrl": "Base URL",
         "apiKey": "API Key",
+        "apiKeyEditPlaceholder": "Leave empty to keep {{mask}}",
         "defaultModel": "Default model",
         "test": "Test connection",
         "testOk": "OK — {{count}} models available",
-        "save": "Save & continue"
+        "save": "Save & continue",
+        "saveEdit": "Save changes"
       },
       "import": {
         "action": "Import",
         "dismiss": "Dismiss",
         "codexFound": "Codex config detected — import {{count}} providers?",
-        "claudeCodeFound": "Claude Code gateway detected at {{baseUrl}} — import?",
         "claudeCodeOAuthTitle": "Claude Code subscription detected",
         "claudeCodeOAuthBody": "Your Pro/Max subscription can only be used through the Claude Code client itself. Third-party apps can't reuse the subscription quota. Generate an API key at Anthropic Console (same account, billed per token) to use Claude here.",
         "claudeCodeOAuthCtaConsole": "Get API key from Anthropic Console ↗",
-        "claudeCodeHasKeyTitle": "Claude Code API key ready to import",
         "claudeCodeHasKeyBody": "Found a key in {{source}} for the gateway at {{baseUrl}} — click Import to use it here.",
         "claudeCodeHasKeySourceSettings": "~/.claude/settings.json",
         "claudeCodeHasKeySourceEnv": "shell env",
-        "claudeCodeLocalProxyTitle": "Local Claude Code proxy detected",
         "claudeCodeLocalProxyBody": "Looks like a local proxy at {{baseUrl}}. This is the typical setup for reusing an OAuth subscription through a tool like Claude Code Proxy.",
         "claudeCodeLocalProxyAction": "Paste key to use proxy",
-        "claudeCodeRemoteGatewayTitle": "Claude Code gateway detected",
         "claudeCodeRemoteGatewayBody": "Gateway at {{baseUrl}} has no API key in your Claude Code config. Import the gateway, then paste a key in Settings.",
         "claudeCodeRemoteGatewayAction": "Paste key to use gateway",
         "oauthErrorToast": "Claude Code subscription can't be shared with third-party apps. Generate an API key at Anthropic Console.",
         "oauthErrorToastCta": "Get API key ↗",
         "codexDone": "Codex providers imported",
-        "claudeCodeDone": "Claude Code provider imported",
         "geminiFound": "Gemini CLI key detected — import?",
         "geminiNoKey": "Gemini CLI config found, but no API key in ~/.gemini/.env or ~/.env. Paste a key manually to use Gemini here.",
-        "geminiBlocked": "Vertex AI detected. The Gemini importer only supports Gemini Developer API keys (AIzaSy…) — configure Vertex manually.",
+        "geminiBlocked": "Google Vertex AI projects aren't supported yet — paste a Gemini Developer API key (starts with AIzaSy…) to use Gemini here.",
         "geminiDone": "Gemini provider imported",
-        "opencodeFound": "OpenCode config detected — import {{count}} providers?",
+        "opencodeBlocked": "OpenCode config detected but nothing is importable. Check the warning above, fix auth.json, and try again.",
+        "opencodeFound": "OpenCode detected — import {{count}} providers ({{providers}})?",
         "opencodeDone": "OpenCode providers imported",
         "claudeCodeImportedActivated": "Claude Code imported and set as the active model provider",
         "claudeCodeOpenSettings": "Open Settings",
@@ -351,6 +362,7 @@
       "showTransient": "Show retried-then-succeeded errors",
       "empty": "No diagnostic events recorded yet.",
       "dbUnavailable": "Diagnostic storage unavailable. Errors are still logged to main.log but won't appear here until the app restarts. Check disk space and permissions.",
+      "inMemoryFallback": "Showing in-memory records — DB unavailable, these will not persist across restart.",
       "report": "Report",
       "column": {
         "time": "Time",
@@ -400,8 +412,13 @@
       "tryFreeSubtitle": "OpenRouter free tier - paste an OpenRouter key, then start with openrouter/free or type any model ID.",
       "useKey": "Use my API key",
       "useKeySubtitle": "Anthropic, OpenAI, or OpenRouter. Auto-detected from the key prefix.",
-      "useOllama": "Use local model (Ollama detected)",
-      "useOllamaSubtitle": "Coming in v0.2 - Ollama integration is on the roadmap.",
+      "useOllama": "Use local model (Ollama)",
+      "useOllamaSubtitle": "Runs 100% locally with zero API cost. Needs Ollama installed and running.",
+      "useOllamaDetected": "Ollama detected — {{count}} models available locally.",
+      "useOllamaNotRunning": "Ollama not detected at localhost:11434. Install or start it, then retry.",
+      "useOllamaProbing": "Checking for a local Ollama instance...",
+      "useOllamaRetry": "Retry probe",
+      "useOllamaInstall": "Install Ollama ↗",
       "whereToGetKey": "Where to get a key"
     },
     "paste": {
@@ -484,6 +501,13 @@
     }
   },
   "topbar": {
+    "modelSwitcher": {
+      "fromProvider": "Provider",
+      "searchPlaceholder": "Search models…",
+      "searchAriaLabel": "Filter models by name",
+      "clearSearch": "Clear search",
+      "noMatches": "No models match \"{{query}}\""
+    },
     "status": {
       "connected": "Connected",
       "untested": "Not tested",
@@ -664,8 +688,6 @@
     "copyStack": "Copy stack",
     "reportOnGitHub": "Report on GitHub",
     "reportViaDiagnostics": "Report via Diagnostics",
-    "reportViaDiagnosticsEmpty": "No diagnostic events have been recorded yet.",
-    "reportDiagnosticsUnavailable": "No matching diagnostic event. Copy the stack and open an issue manually.",
     "reload": "Reload"
   },
   "errors": {
@@ -755,10 +777,6 @@
     "status": "Status: {{status}}",
     "attempted": "What we tried: {{url}}",
     "mostLikelyCause": "Most likely cause:",
-    "toast": {
-      "resolving": "Preparing report…",
-      "noEvent": "No matching diagnostic event"
-    },
     "cause": {
       "keyInvalid": "API key invalid or revoked.",
       "balanceEmpty": "Account balance is empty.",
@@ -805,20 +823,42 @@
       "copySummary": "Copy summary",
       "cancel": "Cancel",
       "copied": "Copied to clipboard",
-      "eventNotFound": "Event not found — it may have been pruned.",
-      "loading": "Loading event…",
+      "generating": "Creating bundle…",
       "close": "Close",
-      "error": "Error",
       "scope": "Scope",
       "runId": "Run id",
       "fingerprint": "Fingerprint",
       "message": "Message",
-      "recentlyReported": "You reported the same issue {relative}.",
+      "recentlyReported": "You reported this {{relative}} as issue #{{issueNumber}}.",
+      "recentlyReportedNoNumber": "You reported this {{relative}}.",
       "viewPrevious": "View previous issue",
       "continueAnyway": "Continue anyway",
+      "confirmOpenAnyway": "Yes, open anyway ({{seconds}}s)",
+      "error": {
+        "notesTooLong": "Notes exceed the 2000-character limit.",
+        "generic": "Couldn't open the issue. Check the log folder for details."
+      },
       "bundleSavedTitle": "Bundle saved",
       "bundleSavedDescription": "Saved to",
-      "revealBundle": "Show in folder"
+      "revealBundle": "Show in folder",
+      "openFailedTitle": "Couldn't open the browser",
+      "openFailedCopyHint": "Copy the issue URL and open it manually.",
+      "copyIssueUrl": "Copy URL",
+      "clipboardFailedTitle": "Couldn't copy to clipboard",
+      "clipboardFailedHint": "The bundle is on disk — open it manually and paste the summary there.",
+      "preview": {
+        "code": "Code",
+        "scope": "Scope",
+        "runId": "Run id",
+        "fingerprint": "Fingerprint",
+        "message": "Message",
+        "upstream": "Upstream context",
+        "upstreamProvider": "Provider",
+        "upstreamStatus": "Status",
+        "upstreamRequestId": "Request id",
+        "upstreamRetry": "Retry",
+        "upstreamBodyHead": "Body head"
+      }
     }
   },
   "demos": {

@@ -67,57 +67,64 @@ const DEFAULTS: Preferences = {
   diagnosticsLastReadTs: 0,
 };
 
+/** Deterministic parse of the on-disk preferences file. No clock reads: the
+ *  diagnosticsLastReadTs seed for migrating installs is applied by the caller
+ *  in `readPersisted` so a missing field doesn't slide forward on every get. */
+function parsePersistedFile(parsed: Partial<PreferencesFile>): Preferences {
+  const persistedSchema = typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : 1;
+  const rawTimeout =
+    typeof parsed.generationTimeoutSec === 'number' && parsed.generationTimeoutSec > 0
+      ? parsed.generationTimeoutSec
+      : DEFAULTS.generationTimeoutSec;
+  const migratedTimeout =
+    persistedSchema < 2 && rawTimeout === V1_DEFAULT_TIMEOUT_SEC
+      ? DEFAULTS.generationTimeoutSec
+      : persistedSchema < 3 && rawTimeout === V2_DEFAULT_TIMEOUT_SEC
+        ? DEFAULTS.generationTimeoutSec
+        : rawTimeout;
+  return {
+    updateChannel:
+      parsed.updateChannel === 'stable' || parsed.updateChannel === 'beta'
+        ? parsed.updateChannel
+        : DEFAULTS.updateChannel,
+    generationTimeoutSec: migratedTimeout,
+    checkForUpdatesOnStartup:
+      typeof parsed.checkForUpdatesOnStartup === 'boolean'
+        ? parsed.checkForUpdatesOnStartup
+        : DEFAULTS.checkForUpdatesOnStartup,
+    autoContinueIncompleteTodos:
+      typeof parsed.autoContinueIncompleteTodos === 'boolean'
+        ? parsed.autoContinueIncompleteTodos
+        : DEFAULTS.autoContinueIncompleteTodos,
+    visualSelfReview:
+      typeof parsed.visualSelfReview === 'boolean'
+        ? parsed.visualSelfReview
+        : DEFAULTS.visualSelfReview,
+    enableFrontendAntiSlopSkill:
+      typeof parsed.enableFrontendAntiSlopSkill === 'boolean'
+        ? parsed.enableFrontendAntiSlopSkill
+        : DEFAULTS.enableFrontendAntiSlopSkill,
+    enableUncodixfySkill:
+      typeof parsed.enableUncodixfySkill === 'boolean'
+        ? parsed.enableUncodixfySkill
+        : DEFAULTS.enableUncodixfySkill,
+    dismissedUpdateVersion:
+      typeof parsed.dismissedUpdateVersion === 'string'
+        ? parsed.dismissedUpdateVersion
+        : DEFAULTS.dismissedUpdateVersion,
+    diagnosticsLastReadTs:
+      typeof parsed.diagnosticsLastReadTs === 'number' && parsed.diagnosticsLastReadTs >= 0
+        ? parsed.diagnosticsLastReadTs
+        : DEFAULTS.diagnosticsLastReadTs,
+  };
+}
+
 export async function readPersisted(): Promise<Preferences> {
   const file = prefsFile();
+  let rawJson: unknown;
   try {
-    const raw = await readFile(file, 'utf8');
-    const parsed = JSON.parse(raw) as Partial<PreferencesFile>;
-    const persistedSchema = typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : 1;
-    const rawTimeout =
-      typeof parsed.generationTimeoutSec === 'number' && parsed.generationTimeoutSec > 0
-        ? parsed.generationTimeoutSec
-        : DEFAULTS.generationTimeoutSec;
-    const migratedTimeout =
-      persistedSchema < 2 && rawTimeout === V1_DEFAULT_TIMEOUT_SEC
-        ? DEFAULTS.generationTimeoutSec
-        : persistedSchema < 3 && rawTimeout === V2_DEFAULT_TIMEOUT_SEC
-          ? DEFAULTS.generationTimeoutSec
-          : rawTimeout;
-    return {
-      updateChannel:
-        parsed.updateChannel === 'stable' || parsed.updateChannel === 'beta'
-          ? parsed.updateChannel
-          : DEFAULTS.updateChannel,
-      generationTimeoutSec: migratedTimeout,
-      checkForUpdatesOnStartup:
-        typeof parsed.checkForUpdatesOnStartup === 'boolean'
-          ? parsed.checkForUpdatesOnStartup
-          : DEFAULTS.checkForUpdatesOnStartup,
-      autoContinueIncompleteTodos:
-        typeof parsed.autoContinueIncompleteTodos === 'boolean'
-          ? parsed.autoContinueIncompleteTodos
-          : DEFAULTS.autoContinueIncompleteTodos,
-      visualSelfReview:
-        typeof parsed.visualSelfReview === 'boolean'
-          ? parsed.visualSelfReview
-          : DEFAULTS.visualSelfReview,
-      enableFrontendAntiSlopSkill:
-        typeof parsed.enableFrontendAntiSlopSkill === 'boolean'
-          ? parsed.enableFrontendAntiSlopSkill
-          : DEFAULTS.enableFrontendAntiSlopSkill,
-      enableUncodixfySkill:
-        typeof parsed.enableUncodixfySkill === 'boolean'
-          ? parsed.enableUncodixfySkill
-          : DEFAULTS.enableUncodixfySkill,
-      dismissedUpdateVersion:
-        typeof parsed.dismissedUpdateVersion === 'string'
-          ? parsed.dismissedUpdateVersion
-          : DEFAULTS.dismissedUpdateVersion,
-      diagnosticsLastReadTs:
-        typeof parsed.diagnosticsLastReadTs === 'number' && parsed.diagnosticsLastReadTs >= 0
-          ? parsed.diagnosticsLastReadTs
-          : DEFAULTS.diagnosticsLastReadTs,
-    };
+    const text = await readFile(file, 'utf8');
+    rawJson = JSON.parse(text);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { ...DEFAULTS };
     throw new CodesignError(
@@ -125,6 +132,31 @@ export async function readPersisted(): Promise<Preferences> {
       'PREFERENCES_READ_FAILED',
     );
   }
+  const parsed = parsePersistedFile((rawJson ?? {}) as Partial<PreferencesFile>);
+  // One-time migration seed: users upgrading from schema < 5 have no record of
+  // when they last read Diagnostics. Without a persisted seed, every call to
+  // readPersisted would mint a fresh Date.now(), sliding the "last read"
+  // baseline forward and masking newer errors before the user ever opens the
+  // panel. Seed once and write back synchronously so subsequent reads return
+  // the same ts. Fresh installs (ENOENT above) skip this branch and stay at 0,
+  // which is fine because their diagnostics DB is empty anyway.
+  if (typeof rawJson === 'object' && rawJson !== null) {
+    const r = rawJson as Record<string, unknown>;
+    const persistedSchema = typeof r['schemaVersion'] === 'number' ? r['schemaVersion'] : 1;
+    const wasMissingField = r['diagnosticsLastReadTs'] === undefined;
+    if (persistedSchema < SCHEMA_VERSION && wasMissingField) {
+      const seeded: Preferences = { ...parsed, diagnosticsLastReadTs: Date.now() };
+      try {
+        await writePersisted(seeded);
+      } catch (err) {
+        logger.warn('preferences.migration.persistSeed.fail', {
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return seeded;
+    }
+  }
+  return parsed;
 }
 
 async function writePersisted(prefs: Preferences): Promise<void> {

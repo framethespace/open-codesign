@@ -1,9 +1,8 @@
 import { useT } from '@open-codesign/i18n';
 import { CheckCircle2, Info, X, XCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useCodesignStore } from '../store';
 import type { Toast as ToastModel, ToastVariant } from '../store';
-import { ReportEventDialog } from './diagnostics/ReportEventDialog';
 
 export function useToast() {
   const push = useCodesignStore((s) => s.pushToast);
@@ -43,15 +42,10 @@ export function scheduleAutoDismiss(
 
 function ToastItem({ toast }: { toast: ToastModel }) {
   const dismiss = useCodesignStore((s) => s.dismissToast);
-  const resolveToastEventId = useCodesignStore((s) => s.resolveToastEventId);
   const t = useT();
   const Icon = iconFor[toast.variant];
   const isError = toast.variant === 'error';
   const autoMs = AUTO_DISMISS_MS[toast.variant];
-  const [reportId, setReportId] = useState<number | null>(null);
-  const [resolving, setResolving] = useState(false);
-  // `null` = not attempted yet; `number` = resolved; `'none'` = resolved to no match.
-  const [resolved, setResolved] = useState<number | 'none' | null>(null);
 
   useEffect(() => {
     const cleanup = scheduleAutoDismiss(toast.variant, () => {
@@ -60,27 +54,14 @@ function ToastItem({ toast }: { toast: ToastModel }) {
     return cleanup ?? undefined;
   }, [toast.id, toast.variant, dismiss]);
 
-  async function openReport(): Promise<void> {
-    setResolving(true);
-    try {
-      const id = await resolveToastEventId(toast);
-      if (id === null) {
-        setResolved('none');
-        return;
-      }
-      setResolved(id);
-      setReportId(id);
-    } finally {
-      setResolving(false);
-    }
+  // Synchronous — the ReportableError was already registered in the store
+  // when the toast was pushed, so Report opens instantly without an IPC
+  // round-trip or DB lookup.
+  function openReport(): void {
+    const localId = toast.localId;
+    if (!localId) return;
+    useCodesignStore.getState().openReportDialog(localId);
   }
-
-  const disableReport = resolving || resolved === 'none';
-  const reportTitle = resolving
-    ? t('diagnostics.toast.resolving')
-    : resolved === 'none'
-      ? t('diagnostics.toast.noEvent')
-      : undefined;
 
   return (
     <div
@@ -112,13 +93,11 @@ function ToastItem({ toast }: { toast: ToastModel }) {
         ) : null}
       </div>
       <div className="flex items-center gap-1 shrink-0">
-        {isError ? (
+        {isError && toast.localId ? (
           <button
             type="button"
-            onClick={() => void openReport()}
-            disabled={disableReport}
-            title={reportTitle}
-            className="h-6 px-2 rounded-[var(--radius-sm)] text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)] border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--color-text-secondary)]"
+            onClick={openReport}
+            className="h-6 px-2 inline-flex items-center gap-1 rounded-[var(--radius-sm)] text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)] border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)] transition-colors"
           >
             {t('toast.error.report')}
           </button>
@@ -141,7 +120,6 @@ function ToastItem({ toast }: { toast: ToastModel }) {
           style={{ animationDuration: `${autoMs}ms` }}
         />
       ) : null}
-      {isError ? <ReportEventDialog eventId={reportId} onClose={() => setReportId(null)} /> : null}
     </div>
   );
 }

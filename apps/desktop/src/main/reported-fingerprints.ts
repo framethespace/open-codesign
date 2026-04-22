@@ -10,8 +10,16 @@
  * only touched from the diagnostics IPC handlers.
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 
 export interface ReportedFingerprint {
   fingerprint: string;
@@ -66,8 +74,42 @@ export function readReported(filePath: string): ReportedFingerprintsFile {
  */
 export function writeAtomic(path: string, content: string): void {
   const tmp = `${path}.tmp.${process.pid}`;
-  writeFileSync(tmp, content, { encoding: 'utf8', mode: 0o600 });
-  renameSync(tmp, path);
+  try {
+    writeFileSync(tmp, content, { encoding: 'utf8', mode: 0o600 });
+    renameSync(tmp, path);
+  } catch (err) {
+    // Cleanup best effort — if unlink also fails we've already lost; leaving a
+    // 0o600 tmp of this user's own data is the lesser evil.
+    try {
+      unlinkSync(tmp);
+    } catch {
+      // swallow
+    }
+    throw err;
+  }
+}
+
+/**
+ * One-shot sweep of stale `<filePath>.tmp.<pid>` siblings left behind by a
+ * previous process that crashed mid-write. Called from boot so the config
+ * directory doesn't accumulate litter across restarts.
+ */
+export function cleanupStaleTmps(filePath: string): void {
+  const dir = dirname(filePath);
+  const prefix = `${basename(filePath)}.tmp.`;
+  try {
+    for (const entry of readdirSync(dir)) {
+      if (entry.startsWith(prefix)) {
+        try {
+          unlinkSync(join(dir, entry));
+        } catch {
+          // swallow
+        }
+      }
+    }
+  } catch {
+    // swallow — a missing config dir is fine; we'll create it on first write.
+  }
 }
 
 function writeFile(filePath: string, data: ReportedFingerprintsFile): void {

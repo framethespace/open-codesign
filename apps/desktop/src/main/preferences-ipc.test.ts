@@ -23,18 +23,24 @@ vi.mock('electron-log/main', () => ({
   },
 }));
 
-const readFileMock = vi.fn();
+const readFileMock = vi.fn<(...args: unknown[]) => Promise<string>>();
+const writeFileMock = vi.fn<(path: string, text: string) => Promise<void>>(async () => {});
 
 vi.mock('node:fs/promises', () => ({
   readFile: (...args: unknown[]) => readFileMock(...args),
-  writeFile: vi.fn(async () => {}),
+  writeFile: (path: string, text: string) => writeFileMock(path, text),
   mkdir: vi.fn(async () => {}),
 }));
 
-import { writeFile } from 'node:fs/promises';
 import { readPersisted, registerPreferencesIpc } from './preferences-ipc';
 
 describe('readPersisted()', () => {
+  beforeEach(() => {
+    readFileMock.mockReset();
+    writeFileMock.mockReset();
+    writeFileMock.mockImplementation(async () => {});
+  });
+
   it('returns defaults when the file does not exist (ENOENT)', async () => {
     const notFound = Object.assign(new Error('no such file'), { code: 'ENOENT' });
     readFileMock.mockRejectedValueOnce(notFound);
@@ -112,6 +118,92 @@ describe('readPersisted()', () => {
     const result = await readPersisted();
     expect(result.generationTimeoutSec).toBe(600);
   });
+
+  it('upgrading from schema 4 seeds diagnosticsLastReadTs to now, not 0', async () => {
+    readFileMock.mockResolvedValueOnce(
+      JSON.stringify({
+        schemaVersion: 4,
+        updateChannel: 'stable',
+        generationTimeoutSec: 1200,
+        checkForUpdatesOnStartup: true,
+        dismissedUpdateVersion: '',
+      }),
+    );
+    const before = Date.now();
+    const result = await readPersisted();
+    const after = Date.now();
+    expect(result.diagnosticsLastReadTs).toBeGreaterThanOrEqual(before);
+    expect(result.diagnosticsLastReadTs).toBeLessThanOrEqual(after);
+  });
+
+  it('preserves an existing diagnosticsLastReadTs across a schema bump', async () => {
+    readFileMock.mockResolvedValueOnce(
+      JSON.stringify({
+        schemaVersion: 4,
+        updateChannel: 'stable',
+        generationTimeoutSec: 1200,
+        checkForUpdatesOnStartup: true,
+        dismissedUpdateVersion: '',
+        diagnosticsLastReadTs: 12345,
+      }),
+    );
+    const result = await readPersisted();
+    expect(result.diagnosticsLastReadTs).toBe(12345);
+  });
+
+  it('fresh install (ENOENT) keeps diagnosticsLastReadTs at 0', async () => {
+    const notFound = Object.assign(new Error('no such file'), { code: 'ENOENT' });
+    readFileMock.mockRejectedValueOnce(notFound);
+    const result = await readPersisted();
+    expect(result.diagnosticsLastReadTs).toBe(0);
+  });
+
+  it('schema migration persists the seed so subsequent reads return the same ts', async () => {
+    // Simulate a tiny in-memory filesystem: the first read returns the
+    // pre-migration blob, the migration writes back, and the second read sees
+    // the written blob.
+    let onDisk = JSON.stringify({
+      schemaVersion: 4,
+      updateChannel: 'stable',
+      generationTimeoutSec: 1200,
+      checkForUpdatesOnStartup: true,
+      dismissedUpdateVersion: '',
+    });
+    readFileMock.mockImplementation(async () => onDisk);
+    writeFileMock.mockImplementation(async (_path: string, text: string) => {
+      onDisk = text;
+    });
+    const first = await readPersisted();
+    expect(first.diagnosticsLastReadTs).toBeGreaterThan(0);
+    const second = await readPersisted();
+    expect(second.diagnosticsLastReadTs).toBe(first.diagnosticsLastReadTs);
+  });
+
+  it('schema migration writes the seeded preferences to disk', async () => {
+    readFileMock.mockResolvedValueOnce(
+      JSON.stringify({
+        schemaVersion: 4,
+        updateChannel: 'stable',
+        generationTimeoutSec: 1200,
+        checkForUpdatesOnStartup: true,
+        dismissedUpdateVersion: '',
+      }),
+    );
+    writeFileMock.mockImplementationOnce(async () => {});
+    const before = Date.now();
+    const result = await readPersisted();
+    const after = Date.now();
+    const lastCall = writeFileMock.mock.calls.at(-1);
+    if (!lastCall) throw new Error('writeFile was not called during migration');
+    const written = JSON.parse(lastCall[1] as string) as {
+      schemaVersion: number;
+      diagnosticsLastReadTs: number;
+    };
+    expect(written.schemaVersion).toBe(7);
+    expect(written.diagnosticsLastReadTs).toBe(result.diagnosticsLastReadTs);
+    expect(written.diagnosticsLastReadTs).toBeGreaterThanOrEqual(before);
+    expect(written.diagnosticsLastReadTs).toBeLessThanOrEqual(after);
+  });
 });
 
 describe('preferences v4 schema fields', () => {
@@ -162,7 +254,6 @@ describe('preferences v4 schema fields', () => {
     expect((updated as { dismissedUpdateVersion: string }).dismissedUpdateVersion).toBe('0.2.1');
 
     // Verify writeFile was called with the updated value.
-    const writeFileMock = vi.mocked(writeFile);
     const lastCall = writeFileMock.mock.calls.at(-1);
     if (!lastCall) throw new Error('writeFile was not called');
     const written = JSON.parse(lastCall[1] as string) as { dismissedUpdateVersion: string };
@@ -191,7 +282,6 @@ describe('preferences v4 schema fields', () => {
       false,
     );
 
-    const writeFileMock = vi.mocked(writeFile);
     const lastCall = writeFileMock.mock.calls.at(-1);
     if (!lastCall) throw new Error('writeFile was not called');
     const written = JSON.parse(lastCall[1] as string) as {

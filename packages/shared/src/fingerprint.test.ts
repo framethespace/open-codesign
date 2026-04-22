@@ -71,6 +71,43 @@ describe('computeFingerprint', () => {
     expect(() => computeFingerprint({ errorCode: 'X', stack: undefined })).not.toThrow();
     expect(() => computeFingerprint({ errorCode: 'X', stack: '' })).not.toThrow();
   });
+
+  it('distinct messages without stack produce distinct fingerprints', () => {
+    const a = computeFingerprint({ errorCode: 'RENDERER_ERROR', stack: undefined, message: 'a' });
+    const b = computeFingerprint({ errorCode: 'RENDERER_ERROR', stack: undefined, message: 'b' });
+    expect(a).not.toBe(b);
+  });
+
+  it('same message without stack produces the same fingerprint', () => {
+    const a = computeFingerprint({ errorCode: 'RENDERER_ERROR', stack: undefined, message: 'x' });
+    const b = computeFingerprint({ errorCode: 'RENDERER_ERROR', stack: '', message: 'x' });
+    expect(a).toBe(b);
+  });
+
+  it('main and renderer computeFingerprint produce identical hashes for the same errorCode+stack+message', () => {
+    // Both main and renderer import this same function, so parity is a
+    // property of the call signature: as long as both sides pass
+    // { errorCode, stack, message } the hash matches. Regression guard
+    // against dropping `message` on one side (see R2 review fingerprint drift).
+    const basis = {
+      errorCode: 'RENDERER_ERROR',
+      stack: 'Error: boom\n    at foo (a.ts:1:1)',
+      message: 'boom',
+    };
+    const fromMain = computeFingerprint(basis);
+    const fromRenderer = computeFingerprint({ ...basis });
+    expect(fromMain).toBe(fromRenderer);
+
+    // And crucially: dropping message from one side yields a DIFFERENT hash
+    // when stack is empty — the original drift bug.
+    const noStackWithMsg = computeFingerprint({
+      errorCode: 'X',
+      stack: undefined,
+      message: 'hi',
+    });
+    const noStackNoMsg = computeFingerprint({ errorCode: 'X', stack: undefined });
+    expect(noStackWithMsg).not.toBe(noStackNoMsg);
+  });
 });
 
 describe('normalizeFrame', () => {
@@ -80,7 +117,27 @@ describe('normalizeFrame', () => {
     );
   });
 
-  it('handles frames without a parenthesized path', () => {
-    expect(normalizeFrame('at /Users/x/proj/src/foo.js:1:1')).toBe('at /Users/x/proj/src/foo.js');
+  it('strips paths from paren-less frames like `at /Users/foo/bar.js`', () => {
+    expect(normalizeFrame('at /Users/x/proj/src/foo.js:1:1')).toBe('at foo.js');
+  });
+
+  it('strips paths from paren-less Windows frames', () => {
+    expect(normalizeFrame('at C:\\Users\\x\\proj\\foo.js:1:1')).toBe('at foo.js');
+  });
+
+  it('strips paths from paren-less ~/ frames', () => {
+    expect(normalizeFrame('at ~/proj/src/foo.js:1:1')).toBe('at foo.js');
+  });
+
+  it('strips Vite HMR cache-buster `?t=...` from paren frames', () => {
+    expect(normalizeFrame('at ProviderCard (Settings.tsx?t=1776846744402)')).toBe(
+      'at ProviderCard (Settings.tsx)',
+    );
+  });
+
+  it('strips Vite HMR cache-buster `?t=...` from paren-less frames', () => {
+    expect(normalizeFrame('at /Users/x/proj/src/Settings.tsx?t=1776846744402:1:1')).toBe(
+      'at Settings.tsx',
+    );
   });
 });
