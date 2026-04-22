@@ -183,6 +183,8 @@ export interface AgentStreamEvent {
     | 'turn_start'
     | 'text_delta'
     | 'turn_end'
+    | 'reflection_start'
+    | 'reflection_result'
     | 'tool_call_start'
     | 'tool_call_result'
     | 'fs_updated'
@@ -199,6 +201,8 @@ export interface AgentStreamEvent {
   delta?: string;
   // turn_end
   finalText?: string;
+  // reflection_start / reflection_result
+  reflectionPhase?: 'started' | 'completed' | 'skipped' | 'failed';
   // tool_call_start
   toolName?: string;
   command?: string;

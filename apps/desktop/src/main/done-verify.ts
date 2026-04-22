@@ -24,6 +24,14 @@ const VERIFY_TIMEOUT_MS = 3000;
 // after the initial render). Short enough that the total is still <= 3s.
 const SETTLE_AFTER_LOAD_MS = 1200;
 
+function isBenignRuntimeWarning(message: string): boolean {
+  const normalized = message.trim();
+  return (
+    normalized.includes('You are using the in-browser Babel transformer') ||
+    normalized.includes('https://babeljs.io/docs/setup/')
+  );
+}
+
 export function makeRuntimeVerifier(): DoneRuntimeVerifier {
   return async (artifactSource: string): Promise<DoneError[]> => {
     const srcdoc = buildSrcdoc(artifactSource);
@@ -84,6 +92,7 @@ export function makeRuntimeVerifier(): DoneRuntimeVerifier {
       const isError = level === 'error' || level === 3;
       const isWarning = level === 'warning' || level === 2;
       if (!isError && !isWarning) return;
+      if (isWarning && isBenignRuntimeWarning(message)) return;
       pushError(message, isError ? 'console.error' : 'console.warning', line);
     };
     const onFailLoad = (

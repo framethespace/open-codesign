@@ -348,6 +348,17 @@ function registerIpcHandlers(db: Database | null): void {
         enabled: prefs.visualSelfReview,
         maxPasses: 1,
       },
+      onReflectionEvent: (event: {
+        phase: 'started' | 'completed' | 'skipped' | 'failed';
+        message: string;
+      }) => {
+        sendEvent({
+          ...baseCtx,
+          type: event.phase === 'started' ? 'reflection_start' : 'reflection_result',
+          reflectionPhase: event.phase,
+          message: event.message,
+        });
+      },
       onEvent: (event: AgentEvent) => {
         // High-signal only. Skip per-token deltas and inner message_*
         // markers. Emit a concise summary at turn_end.

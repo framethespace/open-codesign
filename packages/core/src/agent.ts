@@ -689,6 +689,12 @@ export interface GenerateViaAgentDeps {
     | undefined;
   /** Visual critique/refinement pass configuration. */
   visualReflection?: VisualReflectionOptions | undefined;
+  onReflectionEvent?:
+    | ((event: {
+        phase: 'started' | 'completed' | 'skipped' | 'failed';
+        message: string;
+      }) => void)
+    | undefined;
 }
 
 /**
@@ -884,8 +890,16 @@ export async function generateViaAgent(
       const currentArtifact = deps.fs.view('index.html');
       if (!currentArtifact || currentArtifact.content.trim().length === 0) break;
       try {
+        deps.onReflectionEvent?.({
+          phase: 'started',
+          message: 'Reviewing the live preview screenshot now.',
+        });
         const screenshot = await deps.captureReflectionImage(currentArtifact.content);
         if (!screenshot) {
+          deps.onReflectionEvent?.({
+            phase: 'skipped',
+            message: 'Skipped screenshot self-review because the preview image could not be captured.',
+          });
           reflectionWarnings.push(
             'Visual self-review skipped: could not capture preview screenshot.',
           );
@@ -895,10 +909,18 @@ export async function generateViaAgent(
           { type: 'image', data: screenshot.data, mimeType: screenshot.mimeType },
         ]);
         await agent.waitForIdle();
+        deps.onReflectionEvent?.({
+          phase: 'completed',
+          message: 'Finished the screenshot-based self-review pass.',
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         log.warn('[generate] step=visual_reflection.fail', { ...ctx, pass: pass + 1, message });
         reflectionWarnings.push(`Visual self-review skipped: ${message}`);
+        deps.onReflectionEvent?.({
+          phase: 'failed',
+          message: `Screenshot self-review failed: ${message}`,
+        });
         break;
       }
     }

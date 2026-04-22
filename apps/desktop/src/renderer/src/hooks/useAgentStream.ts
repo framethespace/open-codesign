@@ -277,6 +277,19 @@ export function useAgentStream(): void {
       }
     };
 
+    const handleReflectionEvent = (event: AgentStreamEvent) => {
+      const text =
+        event.message ??
+        (event.type === 'reflection_start'
+          ? 'Reviewing the live preview screenshot now.'
+          : 'Finished the screenshot-based self-review pass.');
+      void appendChatMessage({
+        designId: event.designId,
+        kind: 'assistant_text',
+        payload: { text },
+      });
+    };
+
     const handleError = (event: AgentStreamEvent) => {
       const current = inFlight.current;
       // TODO: replace with rendererLogger once renderer-logger lands
@@ -396,6 +409,10 @@ export function useAgentStream(): void {
           return;
         case 'turn_end':
           handleTurnEnd(event);
+          return;
+        case 'reflection_start':
+        case 'reflection_result':
+          handleReflectionEvent(event);
           return;
         case 'tool_call_start':
           handleToolCallStart(event);
