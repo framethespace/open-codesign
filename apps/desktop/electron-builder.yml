@@ -101,3 +101,17 @@ snap:
   grade: stable
   confinement: strict
   summary: Prompt → polished HTML prototypes, slide decks, and marketing assets.
+# electron-builder defaults fpm's `--name` arg to productName ("Open CoDesign"),
+# which rpmbuild rejects outright (spaces + uppercase are forbidden in RPM
+# package names) and which makes `Package: Open CoDesign` in the deb control
+# file — lintian trips on both. `linux.executableName` fixes binary / desktop
+# file / icon names but NOT the fpm --name, so we override that explicitly
+# here. Passing --name last in the fpm arg list makes it win argparse.
+deb:
+  fpm:
+    - "--name"
+    - "open-codesign"
+rpm:
+  fpm:
+    - "--name"
+    - "open-codesign"

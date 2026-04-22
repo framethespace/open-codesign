@@ -48,7 +48,11 @@ jobs:
   smoke:
     name: Linux packaging smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 30 min because electron-builder takes ~12 min just for the AppImage
+    # (node-module walk is the bottleneck), plus ~2 min each for deb and
+    # rpm, plus setup. The first attempt at 15 min hit the timeout mid-rpm
+    # and got killed with no useful diagnostic.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
