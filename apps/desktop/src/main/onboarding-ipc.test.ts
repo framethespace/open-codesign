@@ -97,10 +97,19 @@ vi.mock('./logger', () => ({
 
 vi.mock('./imports/codex-config', () => ({
   readCodexConfig: vi.fn(async () => null),
+  codexAuthPath: vi.fn(() => '/tmp/codex-auth.json'),
 }));
 
 vi.mock('./imports/claude-code-config', () => ({
   readClaudeCodeSettings: vi.fn(async () => null),
+}));
+
+vi.mock('./imports/gemini-cli-config', () => ({
+  readGeminiCliConfig: vi.fn(async () => null),
+}));
+
+vi.mock('./imports/opencode-config', () => ({
+  readOpencodeConfig: vi.fn(async () => null),
 }));
 
 vi.mock('@open-codesign/providers', () => ({
@@ -568,5 +577,75 @@ describe('config:v1:detect-external-configs — payload shape', () => {
       settingsPath: '/home/alice/.claude/settings.json',
       warnings: ['apiKeyHelper detected'],
     });
+  });
+});
+
+describe('config:v1:detect-external-configs — never leaks plaintext keys', () => {
+  // Regression guard for the "apiKeyMap crosses IPC" silent leak fixed
+  // earlier in this PR chain. Electron's structured clone ships every own
+  // property regardless of the TypeScript facade, so this test verifies
+  // the runtime payload — not the type — omits the secret fields.
+  it('strips apiKeyMap and envKeyMap from Codex before returning', async () => {
+    const { readCodexConfig } = await import('./imports/codex-config');
+    vi.mocked(readCodexConfig).mockResolvedValueOnce({
+      providers: [
+        {
+          id: 'codex-deepseek',
+          name: 'Codex (imported)',
+          builtin: false,
+          wire: 'openai-chat',
+          baseUrl: 'https://api.deepseek.com/v1',
+          defaultModel: 'deepseek-chat',
+          envKey: 'DEEPSEEK_API_KEY',
+        },
+      ],
+      activeProvider: 'codex-deepseek',
+      activeModel: 'deepseek-chat',
+      envKeyMap: { 'codex-deepseek': 'DEEPSEEK_API_KEY' },
+      apiKeyMap: { 'codex-deepseek': 'sk-secret-ant-should-never-leak' },
+      warnings: [],
+    });
+
+    const handler = handlers.get('config:v1:detect-external-configs');
+    expect(handler).toBeDefined();
+    const result = (await handler?.()) as Record<string, unknown>;
+
+    expect(result.codex).toBeDefined();
+    const codex = result.codex as Record<string, unknown>;
+    expect(codex.apiKeyMap).toBeUndefined();
+    expect(codex.envKeyMap).toBeUndefined();
+    // Belt and suspenders: the full serialized payload should not contain
+    // the secret string anywhere — catches future changes that stuff the
+    // key under a different field name.
+    expect(JSON.stringify(result)).not.toContain('sk-secret-ant-should-never-leak');
+  });
+
+  it('strips apiKeyMap from OpenCode before returning', async () => {
+    const { readOpencodeConfig } = await import('./imports/opencode-config');
+    vi.mocked(readOpencodeConfig).mockResolvedValueOnce({
+      providers: [
+        {
+          id: 'opencode-anthropic',
+          name: 'OpenCode · Anthropic',
+          builtin: false,
+          wire: 'anthropic',
+          baseUrl: 'https://api.anthropic.com',
+          defaultModel: 'claude-sonnet-4-6',
+          envKey: 'ANTHROPIC_API_KEY',
+        },
+      ],
+      apiKeyMap: { 'opencode-anthropic': 'sk-opencode-secret-leak-canary' },
+      activeProvider: null,
+      activeModel: null,
+      warnings: [],
+    });
+
+    const handler = handlers.get('config:v1:detect-external-configs');
+    const result = (await handler?.()) as Record<string, unknown>;
+
+    expect(result.opencode).toBeDefined();
+    const oc = result.opencode as Record<string, unknown>;
+    expect(oc.apiKeyMap).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain('sk-opencode-secret-leak-canary');
   });
 });
